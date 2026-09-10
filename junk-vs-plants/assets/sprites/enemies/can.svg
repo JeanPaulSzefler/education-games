@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <rect x="18" y="14" width="28" height="40" rx="4" fill="#b9bcc2" stroke="#7d7f85" stroke-width="2"/>
+  <ellipse cx="32" cy="14" rx="14" ry="4" fill="#d6d8dc" stroke="#7d7f85" stroke-width="2"/>
+  <ellipse cx="32" cy="54" rx="14" ry="4" fill="#9a9ca1"/>
+  <rect x="18" y="28" width="28" height="14" fill="#d94f4f"/>
+  <text x="32" y="38" font-size="9" text-anchor="middle" fill="#ffffff" font-family="sans-serif">COLA</text>
+  <circle cx="24" cy="20" r="2.5" fill="#111"/>
+  <circle cx="40" cy="20" r="2.5" fill="#111"/>
+  <path d="M25 47 q7 5 14 0" stroke="#4a4c50" stroke-width="2" fill="none" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,6 @@
+# Godot backup folders created on engine version upgrade
+junk-vs-plants-(*)/
+
+# Godot editor/import artifacts
+.godot/
+*.import
