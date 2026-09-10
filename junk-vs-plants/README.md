@@ -59,3 +59,12 @@ junk-vs-plants/
 - Ustalenie typów i działania kolejnych roślin na zablokowanych slotach ścieżki sukcesów
 - Dźwięki (sadzenie, trafienie, zbieranie wody, wygrana/przegrana)
 - Ekran główny/tytułowy przed ekranem wyboru poziomu
+
+## Zapisane pomysły na później
+
+- Przerobienie gry na orientację poziomą (landscape)
+- Większe plansze (więcej kolumn/wierszy w siatce ogrodu)
+- Połączenie ekranu wyboru poziomu i ścieżki sukcesów w jedną planszę-ścieżkę — tak żeby przy niektórych poziomach było widać, jaka nowa roślinka się po nich odblokowuje
+- Burza mózgów: nowe roślinki oraz nowe etapy z silniejszymi przeciwnikami (bossowie)
+- Utrudnienia: Kaktus produkujący wodę rzadziej (dłuższe odstępy), oraz pola na planszy, na których nie można sadzić roślin
+- Większe (niewidoczne) pole reagowania na tapnięcie wokół kropli wody, żeby łatwiej było je zbierać
