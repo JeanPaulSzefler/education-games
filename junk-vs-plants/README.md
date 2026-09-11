@@ -14,7 +14,8 @@ Rośliny bronią ogrodu przed falami śmieci-stworów.
 - **Waluta:** krople wody unoszące się nad ekranem — zbierane tapnięciem, zanim znikną. Powstają z Kaktusa.
 - **Paski życia:** pojawiają się tylko wtedy, gdy roślina/szkodnik są właśnie atakowani (znikają po ~2s bez trafienia).
 - **Sterowanie:** tap-tap — tapnij przycisk rośliny na dole, potem tapnij pole w ogrodzie; tapnij kroplę wody, żeby ją zebrać.
-- **Poziomy:** 3 plansze (`LEVELS` w `scripts/main.gd`), każda z 5 falami mieszającymi pojedynczych szkodników i większe grupy — ostatnia fala na poziomie jest zawsze największa. Poziom 2 i 3 odblokowują się po ukończeniu poprzedniego.
+- **Poziomy:** 5 plansz (`LEVELS` w `scripts/main.gd`), każda z 5 falami mieszającymi pojedynczych szkodników i większe grupy — ostatnia fala na poziomie jest zawsze największa. Każdy kolejny poziom odblokowuje się po ukończeniu poprzedniego.
+- **Trudność rośnie na poziomach 4-5:** Kaktus produkuje wodę wolniej (mnożnik odstępu czasu, `cactus_water_multiplier`), a od poziomu 5 dochodzą też pola na planszy, na których nie można sadzić roślin (`blocked_tiles`, zaznaczone czerwonym nakryciem na siatce).
 - **Menu:** ekran wyboru poziomu (`LevelSelect.tscn`) + ścieżka sukcesów (`ProgressPath.tscn`) pokazująca zdobyte rośliny i zablokowane sloty na przyszłe (typy/działanie tych roślin ustalimy przy kolejnych aktualizacjach).
 - **Zapis postępu:** odblokowane poziomy zapisywane lokalnie (`user://savegame.json` przez `scripts/game_state.gd`, autoload `GameState`).
 - **Grafika:** proste, płaskie ikony SVG (rośliny, śmieci-stwory, pociski, krople wody, trawa, kłódka) w `assets/sprites/`.
@@ -66,5 +67,3 @@ junk-vs-plants/
 - Większe plansze (więcej kolumn/wierszy w siatce ogrodu)
 - Połączenie ekranu wyboru poziomu i ścieżki sukcesów w jedną planszę-ścieżkę — tak żeby przy niektórych poziomach było widać, jaka nowa roślinka się po nich odblokowuje
 - Burza mózgów: nowe roślinki oraz nowe etapy z silniejszymi przeciwnikami (bossowie)
-- Utrudnienia: Kaktus produkujący wodę rzadziej (dłuższe odstępy), oraz pola na planszy, na których nie można sadzić roślin
-- Większe (niewidoczne) pole reagowania na tapnięcie wokół kropli wody, żeby łatwiej było je zbierać

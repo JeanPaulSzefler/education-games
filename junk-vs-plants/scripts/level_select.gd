@@ -1,6 +1,9 @@
 extends Control
 
-const LEVEL_NAMES := ["Poziom 1 - Podworko", "Poziom 2 - Park", "Poziom 3 - Wysypisko"]
+const LEVEL_NAMES := [
+	"Poziom 1 - Podworko", "Poziom 2 - Park", "Poziom 3 - Wysypisko",
+	"Poziom 4 - Sortownia Odpadow", "Poziom 5 - Skladowisko",
+]
 
 func _ready() -> void:
 	var bg := ColorRect.new()

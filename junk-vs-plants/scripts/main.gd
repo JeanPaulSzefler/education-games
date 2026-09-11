@@ -21,6 +21,11 @@ const WATER_DROP_TEXTURE := "res://assets/sprites/ui/water_drop.svg"
 const HEALTH_BAR_HIDE_DELAY := 2.0
 const HEALTH_BAR_HEIGHT := 6
 
+# Kropla wody: wizualny rozmiar ikony vs wieksze (niewidoczne) pole reagujace
+# na tapniecie, zeby latwiej bylo ja zlapac.
+const WATER_DROP_VISUAL_SIZE := 44
+const WATER_DROP_TAP_SIZE := 88
+
 # --- Levels: kazdy poziom to lista fal, kazda fala to lista {type, row} ---
 # Fale mieszaja pojedynczych szkodnikow z wiekszymi grupami, ostatnia fala
 # na kazdym poziomie jest najwieksza.
@@ -55,6 +60,31 @@ const LEVELS := [
 			[{"type": 2, "row": 0}, {"type": 0, "row": 0}, {"type": 1, "row": 1}, {"type": 2, "row": 2}, {"type": 1, "row": 2}, {"type": 0, "row": 3}, {"type": 2, "row": 3}, {"type": 1, "row": 4}, {"type": 2, "row": 4}],
 		],
 	},
+	{
+		# Pierwsze utrudnienie: kaktus produkuje wode wolniej (mnoznik odstepu).
+		"name": "Poziom 4 - Sortownia Odpadow",
+		"cactus_water_multiplier": 1.6,
+		"waves": [
+			[{"type": 2, "row": 2}],
+			[{"type": 0, "row": 0}, {"type": 1, "row": 4}],
+			[{"type": 1, "row": 1}, {"type": 1, "row": 2}, {"type": 1, "row": 3}],
+			[{"type": 2, "row": 1}, {"type": 2, "row": 3}],
+			[{"type": 0, "row": 0}, {"type": 2, "row": 0}, {"type": 1, "row": 1}, {"type": 0, "row": 1}, {"type": 2, "row": 2}, {"type": 1, "row": 3}, {"type": 0, "row": 3}, {"type": 2, "row": 4}, {"type": 1, "row": 4}],
+		],
+	},
+	{
+		# Drugie utrudnienie: dodatkowo pola na planszy, na ktorych nie mozna sadzic.
+		"name": "Poziom 5 - Skladowisko",
+		"cactus_water_multiplier": 2.0,
+		"blocked_tiles": [[4, 1], [4, 3], [2, 2]],
+		"waves": [
+			[{"type": 2, "row": 2}, {"type": 2, "row": 0}],
+			[{"type": 0, "row": 1}, {"type": 1, "row": 1}, {"type": 0, "row": 3}, {"type": 1, "row": 3}],
+			[{"type": 2, "row": 1}, {"type": 2, "row": 2}, {"type": 2, "row": 3}],
+			[{"type": 1, "row": 0}, {"type": 1, "row": 1}, {"type": 1, "row": 2}, {"type": 1, "row": 3}, {"type": 1, "row": 4}],
+			[{"type": 2, "row": 0}, {"type": 0, "row": 0}, {"type": 1, "row": 0}, {"type": 2, "row": 1}, {"type": 0, "row": 1}, {"type": 2, "row": 2}, {"type": 1, "row": 2}, {"type": 0, "row": 2}, {"type": 2, "row": 3}, {"type": 0, "row": 3}, {"type": 1, "row": 3}, {"type": 2, "row": 4}, {"type": 1, "row": 4}],
+		],
+	},
 ]
 
 var PLANT_TYPES: Array
@@ -68,6 +98,7 @@ var wave_in_progress := false
 var water := 150
 
 var grid_occupancy := []
+var blocked_cells := {}
 var plants := []
 var enemies := []
 var projectiles := []
@@ -85,10 +116,20 @@ func _ready() -> void:
 	waves = LEVELS[GameState.current_level_index]["waves"]
 	between_waves_timer = 3.0
 	_setup_grid_occupancy()
+	_setup_blocked_cells()
 	_build_background()
 	_build_grid_visual()
 	_build_hud()
 	_build_plant_bar()
+
+func _current_level() -> Dictionary:
+	return LEVELS[GameState.current_level_index]
+
+func _cactus_water_multiplier() -> float:
+	return _current_level().get("cactus_water_multiplier", 1.0)
+
+func _cell_key(col: int, row: int) -> String:
+	return "%d_%d" % [col, row]
 
 func _setup_grid_occupancy() -> void:
 	grid_occupancy.clear()
@@ -97,6 +138,11 @@ func _setup_grid_occupancy() -> void:
 		for r in range(ROWS):
 			col_arr.append(null)
 		grid_occupancy.append(col_arr)
+
+func _setup_blocked_cells() -> void:
+	blocked_cells.clear()
+	for pos in _current_level().get("blocked_tiles", []):
+		blocked_cells[_cell_key(pos[0], pos[1])] = true
 
 func _build_background() -> void:
 	var bg := ColorRect.new()
@@ -118,6 +164,13 @@ func _build_grid_visual() -> void:
 			tile.size = Vector2(CELL - 2, CELL - 2)
 			tile.mouse_filter = Control.MOUSE_FILTER_STOP
 			tile.gui_input.connect(_on_tile_gui_input.bind(c, r))
+			if blocked_cells.has(_cell_key(c, r)):
+				tile.modulate = tile.modulate.darkened(0.45)
+				var blocked_overlay := ColorRect.new()
+				blocked_overlay.color = Color(0.5, 0.1, 0.1, 0.4)
+				blocked_overlay.size = Vector2(CELL - 2, CELL - 2)
+				blocked_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				tile.add_child(blocked_overlay)
 			add_child(tile)
 
 func _build_hud() -> void:
@@ -180,6 +233,9 @@ func _try_place_plant(col: int, row: int) -> void:
 	if selected_plant_type < 0:
 		message_label.text = "Wybierz roslin z paska ponizej"
 		return
+	if blocked_cells.has(_cell_key(col, row)):
+		message_label.text = "Na tym polu nie mozna sadzic"
+		return
 	if grid_occupancy[col][row] != null:
 		message_label.text = "To pole jest zajete"
 		return
@@ -194,7 +250,8 @@ func _try_place_plant(col: int, row: int) -> void:
 	var bar := _add_health_bar(node, CELL - 16)
 	var plant := {
 		"node": node, "hp": pt["hp"], "max_hp": pt["hp"], "col": col, "row": row,
-		"type_idx": selected_plant_type, "atk_timer": 0.0, "gen_timer": pt.get("water_interval", 0.0),
+		"type_idx": selected_plant_type, "atk_timer": 0.0,
+		"gen_timer": pt.get("water_interval", 0.0) * _cactus_water_multiplier(),
 		"bar": bar, "hurt_timer": HEALTH_BAR_HIDE_DELAY + 1.0,
 	}
 	plants.append(plant)
@@ -275,7 +332,7 @@ func _update_plants(delta: float) -> void:
 			"generator":
 				plant["gen_timer"] -= delta
 				if plant["gen_timer"] <= 0.0:
-					plant["gen_timer"] = pt["water_interval"]
+					plant["gen_timer"] = pt["water_interval"] * _cactus_water_multiplier()
 					_spawn_water_drop(plant["node"].position, pt["water_value"])
 			_:
 				pass
@@ -361,12 +418,21 @@ func _remove_plant(plant: Dictionary) -> void:
 
 # --- Krople wody: pojawiaja sie z Kaktusa, uciekaja w gore, zbierane tapnieciem ---
 func _spawn_water_drop(origin: Vector2, value: int) -> void:
-	var node := _make_sprite(WATER_DROP_TEXTURE, 44)
-	node.position = origin + Vector2(CELL / 2 - 22, -10)
-	node.mouse_filter = Control.MOUSE_FILTER_STOP
-	add_child(node)
-	var drop := {"node": node, "vx": randf_range(-10.0, 10.0), "vy": randf_range(24.0, 40.0), "life": 6.0, "value": value}
-	node.gui_input.connect(_on_water_drop_gui_input.bind(drop))
+	# hit_area to wieksze, niewidoczne pole reagujace na tapniecie; visual to
+	# mniejsza ikonka kropli wysrodkowana wewnatrz niego.
+	var hit_area := Control.new()
+	hit_area.size = Vector2(WATER_DROP_TAP_SIZE, WATER_DROP_TAP_SIZE)
+	var visual_offset := (WATER_DROP_TAP_SIZE - WATER_DROP_VISUAL_SIZE) / 2
+	hit_area.position = origin + Vector2(CELL / 2 - WATER_DROP_TAP_SIZE / 2, -10 - visual_offset)
+	hit_area.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(hit_area)
+
+	var visual := _make_sprite(WATER_DROP_TEXTURE, WATER_DROP_VISUAL_SIZE)
+	visual.position = Vector2(visual_offset, visual_offset)
+	hit_area.add_child(visual)
+
+	var drop := {"node": hit_area, "vx": randf_range(-10.0, 10.0), "vy": randf_range(24.0, 40.0), "life": 6.0, "value": value}
+	hit_area.gui_input.connect(_on_water_drop_gui_input.bind(drop))
 	water_drops.append(drop)
 
 func _on_water_drop_gui_input(event: InputEvent, drop: Dictionary) -> void:

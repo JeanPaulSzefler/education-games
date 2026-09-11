@@ -1,10 +1,10 @@
 extends Node
 
 const SAVE_PATH := "user://savegame.json"
-const LEVEL_COUNT := 3
+const LEVEL_COUNT := 5
 
 var current_level_index := 0
-var unlocked_levels := [true, false, false]
+var unlocked_levels := [true, false, false, false, false]
 
 # Rosliny juz zaimplementowane w grze - wszystkie dostepne od poczatku.
 # Kolejne (locked) sloty na sciezce sukcesow beda dodawane w przyszlych aktualizacjach.
