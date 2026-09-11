@@ -35,7 +35,7 @@ func _ready() -> void:
 
 	for i in range(GameState.LOCKED_PLACEHOLDER_COUNT):
 		_add_slot(start_x + (index % COLS) * CELL, start_y + int(index / float(COLS)) * CELL,
-			load("res://assets/sprites/ui/locked_slot.svg"), "???", false)
+			load("res://assets/sprites/ui/locked_slot.png"), "???", false)
 		index += 1
 
 	var back_btn := Button.new()

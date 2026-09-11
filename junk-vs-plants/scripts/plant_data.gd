@@ -12,16 +12,16 @@ const TYPES := [
 	{
 		"name": "Kukurydza", "cost": 50, "hp": 100, "role": "shooter",
 		"dmg": 20, "interval": 1.2,
-		"texture": "res://assets/sprites/plants/corn.svg",
+		"texture": "res://assets/sprites/plants/corn.png",
 	},
 	{
 		"name": "Kaktus", "cost": 25, "hp": 80, "role": "generator",
 		"water_interval": 7.0, "water_value": 20,
-		"texture": "res://assets/sprites/plants/cactus.svg",
+		"texture": "res://assets/sprites/plants/cactus.png",
 	},
 	{
 		"name": "Lisc Bananowca", "cost": 75, "hp": 400, "role": "wall",
-		"texture": "res://assets/sprites/plants/banana_leaf.svg",
+		"texture": "res://assets/sprites/plants/banana_leaf.png",
 	},
 	{
 		"name": "Pokrzywa", "cost": 60, "hp": 90, "role": "shooter",

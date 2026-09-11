@@ -14,13 +14,13 @@ const GRID_TOP := 92
 # --- Enemy types (mix of junk). bite_interval/bite_dmg = jak czesto i ile
 # szkodnik "odgryza" z rosliny, ktora go blokuje. ---
 const ENEMY_TYPES := [
-	{"name": "Butelka PET", "hp": 80, "speed": 18.0, "bite_dmg": 14, "bite_interval": 1.0, "texture": "res://assets/sprites/enemies/bottle.svg"},
-	{"name": "Puszka", "hp": 60, "speed": 26.0, "bite_dmg": 10, "bite_interval": 0.8, "texture": "res://assets/sprites/enemies/can.svg"},
-	{"name": "Kartonowy Golem", "hp": 220, "speed": 12.0, "bite_dmg": 24, "bite_interval": 1.2, "texture": "res://assets/sprites/enemies/cardboard_golem.svg"},
+	{"name": "Butelka PET", "hp": 80, "speed": 18.0, "bite_dmg": 14, "bite_interval": 1.0, "texture": "res://assets/sprites/enemies/bottle.png"},
+	{"name": "Puszka", "hp": 60, "speed": 26.0, "bite_dmg": 10, "bite_interval": 0.8, "texture": "res://assets/sprites/enemies/can.png"},
+	{"name": "Kartonowy Golem", "hp": 220, "speed": 12.0, "bite_dmg": 24, "bite_interval": 1.2, "texture": "res://assets/sprites/enemies/cardboard_golem.png"},
 ]
 
-const THORN_TEXTURE := "res://assets/sprites/ui/thorn.svg"
-const WATER_DROP_TEXTURE := "res://assets/sprites/ui/water_drop.svg"
+const THORN_TEXTURE := "res://assets/sprites/ui/thorn.png"
+const WATER_DROP_TEXTURE := "res://assets/sprites/ui/water_drop.png"
 const FERTILIZER_TEXTURE := "res://assets/sprites/ui/fertilizer.svg"
 const BOOST_RING_TEXTURE := "res://assets/sprites/ui/boost_ring.svg"
 
@@ -188,7 +188,7 @@ func _build_background() -> void:
 	add_child(bg)
 
 func _build_grid_visual() -> void:
-	var grass_texture := load("res://assets/sprites/ui/grass_tile.svg")
+	var grass_texture := load("res://assets/sprites/ui/grass_tile.png")
 	for c in range(COLS):
 		for r in range(ROWS):
 			var tile := TextureRect.new()
