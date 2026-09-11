@@ -594,7 +594,7 @@ func _update_enemies(delta: float) -> void:
 	if reached_house:
 		_lose_game()
 
-func _plant_ahead(e: Dictionary):
+func _plant_ahead(e: Dictionary) -> Variant:
 	var col := int((e["x"] - GRID_LEFT) / CELL)
 	col = clamp(col, 0, COLS - 1)
 	var candidate = grid_occupancy[col][e["row"]]
