@@ -667,16 +667,16 @@ func _trigger_boss_special(e: Dictionary) -> void:
 	var bt = BOSS_TYPES[e["boss_type_idx"]]
 	match bt["special"]:
 		"power_bite":
-			var blocking = _plant_ahead(e)
-			if blocking != null:
+			var bite_target = _plant_ahead(e)
+			if bite_target != null:
 				var dmg := int(e["bite_dmg"] * bt["power_bite_multiplier"])
-				blocking["hp"] -= dmg
-				_flash_health_bar(blocking)
-				if blocking["hp"] <= 0:
-					_remove_plant(blocking)
+				bite_target["hp"] -= dmg
+				_flash_health_bar(bite_target)
+				if bite_target["hp"] <= 0:
+					_remove_plant(bite_target)
 		"phase_jump":
-			var blocking = _plant_ahead(e)
-			if blocking != null:
+			var jump_target = _plant_ahead(e)
+			if jump_target != null:
 				e["x"] -= CELL
 				e["node"].position.x = e["x"]
 		"row_crush":
@@ -692,10 +692,10 @@ func _trigger_boss_special(e: Dictionary) -> void:
 				if plant["row"] == e["row"]:
 					plant["disable_timer"] = bt["disable_duration"]
 		"toxic_cloud":
-			var blocking = _plant_ahead(e)
-			if blocking != null:
-				blocking["poison_timer"] = bt["poison_delay"]
-				blocking["poison_dmg"] = bt["poison_dmg"]
+			var poison_target = _plant_ahead(e)
+			if poison_target != null:
+				poison_target["poison_timer"] = bt["poison_delay"]
+				poison_target["poison_dmg"] = bt["poison_dmg"]
 
 func _show_boss_bar(boss_name: String) -> void:
 	boss_name_label.text = boss_name
