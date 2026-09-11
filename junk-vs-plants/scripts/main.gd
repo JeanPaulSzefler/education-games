@@ -1,11 +1,15 @@
 extends Node2D
 
+# --- Viewport (landscape) ---
+const VIEWPORT_WIDTH := 1280
+const VIEWPORT_HEIGHT := 720
+
 # --- Grid layout ---
-const COLS := 8
+const COLS := 13
 const ROWS := 5
-const CELL := 90
-const GRID_LEFT := 0
-const GRID_TOP := 160
+const CELL := 88
+const GRID_LEFT := 68
+const GRID_TOP := 92
 
 # --- Enemy types (mix of junk). bite_interval/bite_dmg = jak czesto i ile
 # szkodnik "odgryza" z rosliny, ktora go blokuje. ---
@@ -148,7 +152,7 @@ func _build_background() -> void:
 	var bg := ColorRect.new()
 	bg.color = Color(0.55, 0.45, 0.3)
 	bg.position = Vector2(0, 0)
-	bg.size = Vector2(COLS * CELL, GRID_TOP + ROWS * CELL)
+	bg.size = Vector2(VIEWPORT_WIDTH, GRID_TOP + ROWS * CELL)
 	add_child(bg)
 
 func _build_grid_visual() -> void:
@@ -176,35 +180,35 @@ func _build_grid_visual() -> void:
 func _build_hud() -> void:
 	var level_title := Label.new()
 	level_title.text = LEVELS[GameState.current_level_index]["name"]
-	level_title.position = Vector2(20, 10)
-	level_title.add_theme_font_size_override("font_size", 20)
+	level_title.position = Vector2(20, 4)
+	level_title.add_theme_font_size_override("font_size", 16)
 	add_child(level_title)
 
 	water_label = Label.new()
-	water_label.position = Vector2(20, 40)
-	water_label.add_theme_font_size_override("font_size", 30)
+	water_label.position = Vector2(20, 24)
+	water_label.add_theme_font_size_override("font_size", 26)
 	add_child(water_label)
 
 	wave_label = Label.new()
-	wave_label.position = Vector2(20, 78)
-	wave_label.add_theme_font_size_override("font_size", 22)
+	wave_label.position = Vector2(20, 52)
+	wave_label.add_theme_font_size_override("font_size", 18)
 	add_child(wave_label)
 
 	message_label = Label.new()
-	message_label.position = Vector2(20, GRID_TOP + ROWS * CELL + 20)
-	message_label.add_theme_font_size_override("font_size", 26)
+	message_label.position = Vector2(20, GRID_TOP + ROWS * CELL + 8)
+	message_label.add_theme_font_size_override("font_size", 20)
 	add_child(message_label)
 
 	_update_hud()
 
 func _build_plant_bar() -> void:
-	var bar_y := GRID_TOP + ROWS * CELL + 70
+	var bar_y := GRID_TOP + ROWS * CELL + 36
 	for i in range(PLANT_TYPES.size()):
 		var pt = PLANT_TYPES[i]
 		var btn := Button.new()
 		btn.text = "%s\n%d kropel" % [pt["name"], pt["cost"]]
-		btn.position = Vector2(20 + i * 180, bar_y)
-		btn.size = Vector2(160, 80)
+		btn.position = Vector2(20 + i * 150, bar_y)
+		btn.size = Vector2(140, 56)
 		btn.pressed.connect(_on_plant_button_pressed.bind(i))
 		add_child(btn)
 		plant_buttons.append(btn)
@@ -308,7 +312,7 @@ func _update_wave_spawning(delta: float) -> void:
 func _spawn_enemy(type_idx: int, row: int) -> void:
 	var et = ENEMY_TYPES[type_idx]
 	var node := _make_sprite(et["texture"], CELL - 16)
-	var x := float(COLS * CELL)
+	var x := float(GRID_LEFT + COLS * CELL)
 	node.position = Vector2(x, GRID_TOP + row * CELL + 8)
 	add_child(node)
 	var bar := _add_health_bar(node, CELL - 16)
@@ -364,7 +368,7 @@ func _update_projectiles(delta: float) -> void:
 			hit_enemy["hp"] -= proj["dmg"]
 			_flash_health_bar(hit_enemy)
 			to_remove.append(proj)
-		elif proj["x"] > COLS * CELL:
+		elif proj["x"] > GRID_LEFT + COLS * CELL:
 			to_remove.append(proj)
 	for proj in to_remove:
 		proj["node"].queue_free()
@@ -524,17 +528,17 @@ func _win_game() -> void:
 	_show_end_buttons()
 
 func _show_end_buttons() -> void:
-	var y := GRID_TOP + ROWS * CELL + 160
+	var y := GRID_TOP + ROWS * CELL + 100
 	var retry_btn := Button.new()
 	retry_btn.text = "Zagraj ponownie"
 	retry_btn.position = Vector2(20, y)
-	retry_btn.size = Vector2(300, 70)
+	retry_btn.size = Vector2(250, 56)
 	retry_btn.pressed.connect(func(): get_tree().reload_current_scene())
 	add_child(retry_btn)
 
 	var select_btn := Button.new()
 	select_btn.text = "Wybierz poziom"
-	select_btn.position = Vector2(340, y)
-	select_btn.size = Vector2(300, 70)
+	select_btn.position = Vector2(290, y)
+	select_btn.size = Vector2(250, 56)
 	select_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/LevelSelect.tscn"))
 	add_child(select_btn)

@@ -1,13 +1,15 @@
 extends Control
 
-const COLS := 4
+const VIEWPORT_WIDTH := 1280
+const VIEWPORT_HEIGHT := 720
+const COLS := 6
 const CELL := 140
 
 func _ready() -> void:
 	var bg := ColorRect.new()
 	bg.color = Color(0.15, 0.25, 0.15)
 	bg.position = Vector2(0, 0)
-	bg.size = Vector2(720, 1280)
+	bg.size = Vector2(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
 	add_child(bg)
 
 	var title := Label.new()
@@ -23,7 +25,7 @@ func _ready() -> void:
 	add_child(hint)
 
 	var start_x := 40
-	var start_y := 180
+	var start_y := 160
 	var index := 0
 
 	for plant in PlantData.TYPES:
@@ -38,8 +40,8 @@ func _ready() -> void:
 
 	var back_btn := Button.new()
 	back_btn.text = "Wroc"
-	back_btn.position = Vector2(40, 1180)
-	back_btn.size = Vector2(200, 70)
+	back_btn.position = Vector2(40, 620)
+	back_btn.size = Vector2(200, 60)
 	back_btn.pressed.connect(_on_back_pressed)
 	add_child(back_btn)
 

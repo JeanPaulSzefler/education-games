@@ -6,6 +6,7 @@ Rośliny bronią ogrodu przed falami śmieci-stworów.
 ## Ustalenia projektowe (MVP)
 
 - **Silnik:** Godot 4.x (projekt tworzony na 4.4/4.7, zadziała na dowolnej nowszej wersji 4.x)
+- **Orientacja i plansza:** ekran poziomy (landscape, 1280x720), szersza siatka ogrodu (13 kolumn x 5 wierszy zamiast pierwotnych 8x5) — więcej miejsca na taktykę dzięki szerszemu ekranowi.
 - **Przeciwnicy:** mix śmieci — Butelka PET, Puszka, Kartonowy Golem (dane w `scripts/main.gd`, `ENEMY_TYPES`). Szkodnik, który dotrze do rośliny, "zjada" ją stopniowo (odgryza kawałek HP co jakiś czas), a nie rani jej od razu.
 - **Rośliny** (dane w `scripts/plant_data.gd`, `PlantData.TYPES`):
   - **Kukurydza** — strzelec, atakuje szkodnika w swoim rzędzie.
@@ -63,7 +64,5 @@ junk-vs-plants/
 
 ## Zapisane pomysły na później
 
-- Przerobienie gry na orientację poziomą (landscape)
-- Większe plansze (więcej kolumn/wierszy w siatce ogrodu)
 - Połączenie ekranu wyboru poziomu i ścieżki sukcesów w jedną planszę-ścieżkę — tak żeby przy niektórych poziomach było widać, jaka nowa roślinka się po nich odblokowuje
 - Burza mózgów: nowe roślinki oraz nowe etapy z silniejszymi przeciwnikami (bossowie)
