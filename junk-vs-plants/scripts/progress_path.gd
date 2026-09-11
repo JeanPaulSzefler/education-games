@@ -54,10 +54,10 @@ func _add_slot(x: int, y: int, texture: Texture2D, label_text: String, unlocked:
 
 	var icon := TextureRect.new()
 	icon.texture = texture
-	icon.position = Vector2(x + 12, y + 6)
-	icon.size = Vector2(CELL - 44, CELL - 44)
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.position = Vector2(x + 12, y + 6)
+	icon.size = Vector2(CELL - 44, CELL - 44)
 	if not unlocked:
 		icon.modulate = Color(0.6, 0.6, 0.6)
 	add_child(icon)

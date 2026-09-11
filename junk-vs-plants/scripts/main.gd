@@ -843,9 +843,13 @@ func _update_health_bars(delta: float) -> void:
 func _make_sprite(texture_path: String, target_size: int) -> TextureRect:
 	var node := TextureRect.new()
 	node.texture = load(texture_path)
-	node.size = Vector2(target_size, target_size)
+	# Kolejnosc ma znaczenie: expand_mode/stretch_mode musza byc ustawione
+	# PRZED size, inaczej Control chwilowo liczy minimalny rozmiar na
+	# podstawie natywnej rozdzielczosci tekstury i "zatrzaskuje" node na tym
+	# duzym rozmiarze, zanim zdazymy powiedziec mu, zeby ja ignorowal.
 	node.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	node.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	node.size = Vector2(target_size, target_size)
 	node.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return node
 
