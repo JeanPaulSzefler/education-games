@@ -5,7 +5,8 @@ extends RefCounted
 #       "generator" co jakis czas tworzy kropelke wody do zebrania
 #       "wall"      tylko blokuje, nie atakuje
 #       "melee"     kontratakuje szkodnika w chwili gdy ten ja gryzie (pole "counter_dmg")
-#       "freeze"    jednorazowa: gdy szkodnik do niej dotrze, spowalnia caly jej rzad i znika
+#       "freeze"    jednorazowa: gdy szkodnik na nia stanie, znika, a ten szkodnik
+#                   zostaje calkowicie unieruchomiony na "slow_duration" (tylko on, nie caly rzad)
 #       "bomb"      jednorazowa: po czasie "fuse_time" wybucha, raniac wszystko w pobliskich polach
 #       "gust"      jednorazowa: gdy JAKIKOLWIEK szkodnik pojawi sie w jej rzedzie
 #                   (nie trzeba czekac, az ja dotknie), rani i odrzuca caly rzad, po czym znika
@@ -36,7 +37,7 @@ const TYPES := [
 	},
 	{
 		"name": "Mrozoroslinka", "cost": 40, "hp": 40, "role": "freeze",
-		"slow_factor": 0.15, "slow_duration": 5.0,
+		"slow_factor": 0.0, "slow_duration": 5.0,
 		"texture": "res://assets/sprites/plants/frost.svg",
 	},
 	{

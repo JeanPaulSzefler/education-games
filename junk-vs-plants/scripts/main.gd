@@ -586,7 +586,7 @@ func _update_enemies(delta: float) -> void:
 			# _update_plants(), od razu gdy szkodnik pojawi sie w jej rzedzie.)
 			if bpt["role"] == "freeze" and not blocking_plant["used"]:
 				blocking_plant["used"] = true
-				_trigger_freeze(blocking_plant, bpt)
+				_trigger_freeze(blocking_plant, bpt, e)
 				e["bite_timer"] = 0.0
 				continue
 
@@ -638,12 +638,13 @@ func _remove_plant(plant: Dictionary, drop_fertilizer: bool = true) -> void:
 	plants.erase(plant)
 
 # --- Rosliny jednorazowe: mrozoroslinka, bumorzech, wichurowy ---
-func _trigger_freeze(plant: Dictionary, pt: Dictionary) -> void:
-	for e in enemies:
-		if e["row"] == plant["row"]:
-			e["slow_timer"] = pt["slow_duration"]
-			e["slow_factor"] = pt["slow_factor"]
-			e["node"].modulate = Color(0.6, 0.85, 1.0)
+func _trigger_freeze(plant: Dictionary, pt: Dictionary, target: Dictionary) -> void:
+	# Mrozoroslinka znika, ale szkodnik, ktory na nia stanal, zostaje
+	# calkowicie unieruchomiony (nie moze sie ruszyc ani nic zniszczyc) az do
+	# rozmrozenia - reszta rzedu porusza sie normalnie.
+	target["slow_timer"] = pt["slow_duration"]
+	target["slow_factor"] = pt["slow_factor"]
+	target["node"].modulate = Color(0.6, 0.85, 1.0)
 	_remove_plant(plant, false)
 
 func _trigger_gust(plant: Dictionary, pt: Dictionary) -> void:
