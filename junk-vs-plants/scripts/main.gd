@@ -17,6 +17,9 @@ const ENEMY_TYPES := [
 	{"name": "Butelka PET", "hp": 80, "speed": 18.0, "bite_dmg": 14, "bite_interval": 1.0, "texture": "res://assets/sprites/enemies/bottle.png"},
 	{"name": "Puszka", "hp": 60, "speed": 26.0, "bite_dmg": 10, "bite_interval": 0.8, "texture": "res://assets/sprites/enemies/can.png"},
 	{"name": "Kartonowy Golem", "hp": 220, "speed": 12.0, "bite_dmg": 24, "bite_interval": 1.2, "texture": "res://assets/sprites/enemies/cardboard_golem.png"},
+	# Brudna Gabka: kradnie krople wody zamiast (albo oprocz) gryzc rosliny -
+	# patrz _update_water_theft().
+	{"name": "Brudna Gabka", "hp": 50, "speed": 20.0, "bite_dmg": 8, "bite_interval": 1.0, "texture": "res://assets/sprites/enemies/sponge.svg", "water_thief": true},
 ]
 
 const THORN_TEXTURE := "res://assets/sprites/ui/thorn.png"
@@ -32,6 +35,10 @@ const HEALTH_BAR_HEIGHT := 6
 const WATER_DROP_VISUAL_SIZE := 44
 const WATER_DROP_TAP_SIZE := 88
 const WATER_DROP_SPEED := 36.0
+# Brudna Gabka: predkosc, z jaka skradziona kropla "dolatuje" do stwora
+# (celowo wolniej niz normalny lot kropli, zeby gracz mial szanse ja odzyskac).
+const WATER_DROP_STEAL_SPEED := 22.0
+const WATER_DROP_STOLEN_COLOR := Color(0.42, 0.4, 0.18)
 const FERTILIZER_VISUAL_SIZE := 40
 const FERTILIZER_TAP_SIZE := 88
 
@@ -84,15 +91,16 @@ const LEVELS := [
 	},
 	{
 		# Pierwsze utrudnienie: kaktus produkuje wode wolniej (mnoznik odstepu).
+		# Trzecie utrudnienie: Brudna Gabka (type 3) - kradnie krople wody.
 		"name": "Poziom 4 - Sortownia Odpadow",
 		"boss": 3,
 		"cactus_water_multiplier": 1.6,
 		"waves": [
 			[{"type": 2, "row": 2}],
 			[{"type": 0, "row": 0}, {"type": 1, "row": 4}],
-			[{"type": 1, "row": 1}, {"type": 1, "row": 2}, {"type": 1, "row": 3}],
+			[{"type": 1, "row": 1}, {"type": 3, "row": 2}, {"type": 1, "row": 3}],
 			[{"type": 2, "row": 1}, {"type": 2, "row": 3}],
-			[{"type": 0, "row": 0}, {"type": 2, "row": 0}, {"type": 1, "row": 1}, {"type": 0, "row": 1}, {"type": 2, "row": 2}, {"type": 1, "row": 3}, {"type": 0, "row": 3}, {"type": 2, "row": 4}, {"type": 1, "row": 4}],
+			[{"type": 0, "row": 0}, {"type": 2, "row": 0}, {"type": 1, "row": 1}, {"type": 3, "row": 1}, {"type": 2, "row": 2}, {"type": 1, "row": 3}, {"type": 0, "row": 3}, {"type": 2, "row": 4}, {"type": 1, "row": 4}],
 		],
 	},
 	{
@@ -103,10 +111,10 @@ const LEVELS := [
 		"blocked_tiles": [[4, 1], [4, 3], [2, 2]],
 		"waves": [
 			[{"type": 2, "row": 2}, {"type": 2, "row": 0}],
-			[{"type": 0, "row": 1}, {"type": 1, "row": 1}, {"type": 0, "row": 3}, {"type": 1, "row": 3}],
-			[{"type": 2, "row": 1}, {"type": 2, "row": 2}, {"type": 2, "row": 3}],
-			[{"type": 1, "row": 0}, {"type": 1, "row": 1}, {"type": 1, "row": 2}, {"type": 1, "row": 3}, {"type": 1, "row": 4}],
-			[{"type": 2, "row": 0}, {"type": 0, "row": 0}, {"type": 1, "row": 0}, {"type": 2, "row": 1}, {"type": 0, "row": 1}, {"type": 2, "row": 2}, {"type": 1, "row": 2}, {"type": 0, "row": 2}, {"type": 2, "row": 3}, {"type": 0, "row": 3}, {"type": 1, "row": 3}, {"type": 2, "row": 4}, {"type": 1, "row": 4}],
+			[{"type": 0, "row": 1}, {"type": 1, "row": 1}, {"type": 3, "row": 3}, {"type": 1, "row": 3}],
+			[{"type": 2, "row": 1}, {"type": 3, "row": 2}, {"type": 2, "row": 3}],
+			[{"type": 1, "row": 0}, {"type": 3, "row": 1}, {"type": 1, "row": 2}, {"type": 3, "row": 3}, {"type": 1, "row": 4}],
+			[{"type": 2, "row": 0}, {"type": 0, "row": 0}, {"type": 1, "row": 0}, {"type": 2, "row": 1}, {"type": 3, "row": 1}, {"type": 2, "row": 2}, {"type": 1, "row": 2}, {"type": 0, "row": 2}, {"type": 2, "row": 3}, {"type": 3, "row": 3}, {"type": 1, "row": 3}, {"type": 2, "row": 4}, {"type": 1, "row": 4}],
 		],
 	},
 ]
@@ -387,6 +395,7 @@ func _process(delta: float) -> void:
 	_update_enemies(delta)
 	_update_boss_specials(delta)
 	_update_boss_bar()
+	_update_water_theft(delta)
 	_update_water_drops(delta)
 	_update_fertilizer_drops(delta)
 	_update_health_bars(delta)
@@ -438,6 +447,7 @@ func _spawn_enemy(type_idx: int, row: int) -> void:
 		"speed": et["speed"], "bite_dmg": et["bite_dmg"], "bite_interval": et["bite_interval"],
 		"bite_timer": 0.0, "bar": bar, "hurt_timer": HEALTH_BAR_HIDE_DELAY + 1.0,
 		"slow_timer": 0.0, "slow_factor": 1.0, "is_boss": false,
+		"water_thief": et.get("water_thief", false), "steal_target": null,
 	})
 
 func _spawn_boss(boss_idx: int) -> void:
@@ -589,6 +599,7 @@ func _update_enemies(delta: float) -> void:
 				e["node"].modulate = Color(1, 1, 1)
 
 	for e in dead:
+		_release_stolen_drop(e)
 		e["node"].queue_free()
 		enemies.erase(e)
 
@@ -741,9 +752,11 @@ func _spawn_water_drop(origin: Vector2, value: int) -> void:
 	var angle := randf_range(0.0, TAU)
 	var drop := {
 		"node": hit_area,
+		"visual": visual,
 		"vx": cos(angle) * WATER_DROP_SPEED,
 		"vy": sin(angle) * WATER_DROP_SPEED,
 		"value": value,
+		"stolen_by": null,
 	}
 	hit_area.gui_input.connect(_on_water_drop_gui_input.bind(drop))
 	water_drops.append(drop)
@@ -764,6 +777,8 @@ func _update_water_drops(delta: float) -> void:
 	var min_y := float(GRID_TOP)
 	var max_y := float(GRID_TOP + ROWS * CELL - WATER_DROP_TAP_SIZE)
 	for drop in water_drops:
+		if drop["stolen_by"] != null:
+			continue
 		var node: Control = drop["node"]
 		var pos: Vector2 = node.position + Vector2(drop["vx"], drop["vy"]) * delta
 		if pos.x < min_x or pos.x > max_x:
@@ -773,6 +788,58 @@ func _update_water_drops(delta: float) -> void:
 			drop["vy"] *= -1.0
 			pos.y = clamp(pos.y, min_y, max_y)
 		node.position = pos
+
+# --- Brudna Gabka: po pojawieniu sie "przyciaga" najblizsza wolna kropla wody -
+# przebarwia ja na brudno-zielono i powoli sciaga w swoja strone. Gracz moze ja
+# jeszcze tapnac i odzyskac, zanim dolatuje do stwora - wtedy znika bez zwrotu wody. ---
+func _update_water_theft(delta: float) -> void:
+	for e in enemies:
+		if not e.get("water_thief", false) or e["hp"] <= 0:
+			continue
+		var target = e.get("steal_target")
+		if target != null and not water_drops.has(target):
+			target = null
+			e["steal_target"] = null
+		if target == null:
+			target = _find_unstolen_water_drop(e)
+			if target != null:
+				target["stolen_by"] = e
+				target["visual"].modulate = WATER_DROP_STOLEN_COLOR
+				e["steal_target"] = target
+		if target == null:
+			continue
+		var drop_node: Control = target["node"]
+		var enemy_center: Vector2 = e["node"].position + e["node"].size / 2
+		var drop_center: Vector2 = drop_node.position + drop_node.size / 2
+		var to_enemy: Vector2 = enemy_center - drop_center
+		if to_enemy.length() <= 6.0:
+			water_drops.erase(target)
+			drop_node.queue_free()
+			e["steal_target"] = null
+			continue
+		drop_node.position += to_enemy.normalized() * WATER_DROP_STEAL_SPEED * delta
+
+func _find_unstolen_water_drop(e: Dictionary) -> Variant:
+	var closest = null
+	var closest_dist := INF
+	for drop in water_drops:
+		if drop["stolen_by"] != null:
+			continue
+		var d: float = e["node"].position.distance_to(drop["node"].position)
+		if d < closest_dist:
+			closest_dist = d
+			closest = drop
+	return closest
+
+func _release_stolen_drop(e: Dictionary) -> void:
+	var target = e.get("steal_target")
+	if target == null or not water_drops.has(target):
+		return
+	target["stolen_by"] = null
+	target["visual"].modulate = Color(1, 1, 1)
+	var angle := randf_range(0.0, TAU)
+	target["vx"] = cos(angle) * WATER_DROP_SPEED
+	target["vy"] = sin(angle) * WATER_DROP_SPEED
 
 # --- Nawozy: pojawiaja sie po pokonaniu rosliny, zbierane tapnieciem ---
 func _spawn_fertilizer_drop(origin: Vector2) -> void:
