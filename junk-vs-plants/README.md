@@ -19,7 +19,7 @@ Rośliny bronią ogrodu przed falami śmieci-stworów.
 - **Trudność rośnie na poziomach 4-5:** Kaktus produkuje wodę wolniej (mnożnik odstępu czasu, `cactus_water_multiplier`), od poziomu 5 dochodzą też pola na planszy, na których nie można sadzić roślin (`blocked_tiles`, zaznaczone czerwonym nakryciem na siatce), a od poziomu 4 pojawia się nowy przeciwnik — **Brudna Gąbka** (`ENEMY_TYPES`, `water_thief`): po pojawieniu się na planszy przyciąga najbliższą wolną kroplę wody (przebarwia ją na brudno-zielono i powoli ściąga w swoją stronę); gracz wciąż może ją tapnąć i odzyskać, zanim dolatuje do gąbki — wtedy znika bez zwrotu wody.
 - **Menu:** ekran wyboru poziomu (`LevelSelect.tscn`) + ścieżka sukcesów (`ProgressPath.tscn`) pokazująca zdobyte rośliny i zablokowane sloty na przyszłe (typy/działanie tych roślin ustalimy przy kolejnych aktualizacjach).
 - **Zapis postępu:** odblokowane poziomy zapisywane lokalnie (`user://savegame.json` przez `scripts/game_state.gd`, autoload `GameState`).
-- **Grafika:** proste, płaskie ikony SVG (rośliny, śmieci-stwory, pociski, krople wody, trawa, kłódka) w `assets/sprites/`.
+- **Grafika:** wygenerowane ikony PNG w stylu naklejek (sticker, chibi-kawaii) w `assets/sprites/` — jedyny pozostały placeholder SVG to `icon.svg` (ikona gry).
 
 ## Struktura projektu
 
@@ -57,7 +57,7 @@ junk-vs-plants/
 
 ## Co dalej (kolejne kroki rozwoju)
 
-- Grafiki obecnie to proste, płaskie ikony SVG narysowane jako placeholder stylu docelowego — do zastąpienia docelową grafiką/animacjami
+- Animacje grafik (obecnie statyczne ikony PNG) — sadzenie, atak, zbieranie wody, śmierć
 - Ustalenie typów i działania kolejnych roślin na zablokowanych slotach ścieżki sukcesów
 - Dźwięki (sadzenie, trafienie, zbieranie wody, wygrana/przegrana)
 - Ekran główny/tytułowy przed ekranem wyboru poziomu

@@ -28,26 +28,26 @@ const TYPES := [
 	{
 		"name": "Pokrzywa", "cost": 60, "hp": 90, "role": "shooter",
 		"dmg": 12, "interval": 1.4, "pierce": true,
-		"texture": "res://assets/sprites/plants/nettle.svg",
+		"texture": "res://assets/sprites/plants/nettle.png",
 	},
 	{
 		"name": "Bitny Brokul", "cost": 70, "hp": 220, "role": "melee",
 		"counter_dmg": 30,
-		"texture": "res://assets/sprites/plants/broccoli.svg",
+		"texture": "res://assets/sprites/plants/broccoli.png",
 	},
 	{
 		"name": "Mrozoroslinka", "cost": 40, "hp": 40, "role": "freeze",
 		"slow_factor": 0.0, "slow_duration": 5.0,
-		"texture": "res://assets/sprites/plants/frost.svg",
+		"texture": "res://assets/sprites/plants/frost.png",
 	},
 	{
 		"name": "Bumorzech", "cost": 90, "hp": 40, "role": "bomb",
 		"fuse_time": 1.5, "blast_dmg": 300, "blast_radius_cells": 1,
-		"texture": "res://assets/sprites/plants/bomb_nut.svg",
+		"texture": "res://assets/sprites/plants/bomb_nut.png",
 	},
 	{
 		"name": "Wichurowy", "cost": 65, "hp": 40, "role": "gust",
 		"gust_dmg": 220, "knockback": 130.0,
-		"texture": "res://assets/sprites/plants/gust_leaf.svg",
+		"texture": "res://assets/sprites/plants/gust_leaf.png",
 	},
 ]

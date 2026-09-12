@@ -19,13 +19,13 @@ const ENEMY_TYPES := [
 	{"name": "Kartonowy Golem", "hp": 220, "speed": 12.0, "bite_dmg": 24, "bite_interval": 1.2, "texture": "res://assets/sprites/enemies/cardboard_golem.png"},
 	# Brudna Gabka: kradnie krople wody zamiast (albo oprocz) gryzc rosliny -
 	# patrz _update_water_theft().
-	{"name": "Brudna Gabka", "hp": 50, "speed": 20.0, "bite_dmg": 8, "bite_interval": 1.0, "texture": "res://assets/sprites/enemies/sponge.svg", "water_thief": true},
+	{"name": "Brudna Gabka", "hp": 50, "speed": 20.0, "bite_dmg": 8, "bite_interval": 1.0, "texture": "res://assets/sprites/enemies/sponge.png", "water_thief": true},
 ]
 
 const THORN_TEXTURE := "res://assets/sprites/ui/thorn.png"
 const WATER_DROP_TEXTURE := "res://assets/sprites/ui/water_drop.png"
-const FERTILIZER_TEXTURE := "res://assets/sprites/ui/fertilizer.svg"
-const BOOST_RING_TEXTURE := "res://assets/sprites/ui/boost_ring.svg"
+const FERTILIZER_TEXTURE := "res://assets/sprites/ui/fertilizer.png"
+const BOOST_RING_TEXTURE := "res://assets/sprites/ui/boost_ring.png"
 
 const HEALTH_BAR_HIDE_DELAY := 2.0
 const HEALTH_BAR_HEIGHT := 6
