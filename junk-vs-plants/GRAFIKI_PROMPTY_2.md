@@ -7,11 +7,12 @@ Po wygenerowaniu podmień plik w `assets/sprites/...`. Jeśli zapiszesz jako `.p
 ## Styl wspólny dla wszystkich grafik (dodaj do każdego promptu)
 
 ```
-Flat 2D vector game icon, simple and colorful, thick black outline,
-clean minimalist shapes, no shading or gradients, no photorealism,
-centered composition with small margin around the subject,
-front-facing or 3/4 view, transparent background, square format,
-mobile game asset style, cheerful and readable at small size
+Flat 2D vector game icon, sticker style, thick bold black outline,
+chibi-kawaii style, simple and colorful, clean minimalist shapes,
+no shading or gradients, no photorealism, centered composition with
+small margin around the subject, front-facing or 3/4 view,
+transparent background, square format, mobile game asset style,
+cheerful and readable at small size
 ```
 
 Wspólna paleta: ciepłe, nasycone kolory (zieleń, brąz, żółty, czerwony), spójne z klimatem "ogród vs śmieci". Bossowie mogą być wizualnie bardziej "groźni/duzi" niż zwykli przeciwnicy, ale nadal w tym samym płaskim, kreskówkowym stylu — bez realizmu i horroru.
