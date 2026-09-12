@@ -509,10 +509,11 @@ func _update_plants(delta: float) -> void:
 						plant["used"] = true
 						_trigger_bomb(plant, pt)
 			"gust":
-				# Jednorazowa: wyzwala sie od razu, gdy jakikolwiek szkodnik
-				# pojawi sie w jej rzedzie - nie trzeba czekac, az ja dotknie.
+				# Jednorazowa: wyzwala sie, gdy jakikolwiek szkodnik jest juz
+				# CALY widoczny w jej rzedzie (a nie tylko czubkiem nosa przy
+				# prawej krawedzi planszy) - nie trzeba czekac, az ja dotknie.
 				if not plant["used"]:
-					if not _find_enemy_in_row(plant["row"]).is_empty():
+					if not _find_fully_entered_enemy_in_row(plant["row"]).is_empty():
 						plant["used"] = true
 						_trigger_gust(plant, pt)
 			_:
@@ -527,6 +528,17 @@ func _update_plants(delta: float) -> void:
 func _find_enemy_in_row(row: int) -> Dictionary:
 	for e in enemies:
 		if e["row"] == row:
+			return e
+	return {}
+
+# Jak _find_enemy_in_row, ale liczy sie tylko szkodnik, ktory juz w calosci
+# wszedl na plansze (jego tylna/prawa krawedz jest juz w obrebie siatki) -
+# enemies spawnuja sie tuz ZA prawa krawedzia planszy, wiec "istnieje w
+# enemies[]" nie znaczy jeszcze "widac go na planszy".
+func _find_fully_entered_enemy_in_row(row: int) -> Dictionary:
+	var board_right := float(GRID_LEFT + COLS * CELL)
+	for e in enemies:
+		if e["row"] == row and e["x"] + e["node"].size.x <= board_right:
 			return e
 	return {}
 
