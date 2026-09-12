@@ -31,6 +31,7 @@ const HEALTH_BAR_HEIGHT := 6
 # reagujace na tapniecie, zeby latwiej bylo ja zlapac.
 const WATER_DROP_VISUAL_SIZE := 44
 const WATER_DROP_TAP_SIZE := 88
+const WATER_DROP_SPEED := 36.0
 const FERTILIZER_VISUAL_SIZE := 40
 const FERTILIZER_TAP_SIZE := 88
 
@@ -719,7 +720,8 @@ func _update_boss_bar() -> void:
 	var ratio: float = clamp(float(boss["hp"]) / float(boss["max_hp"]), 0.0, 1.0)
 	boss_bar_fg.size.x = 300 * ratio
 
-# --- Krople wody: pojawiaja sie z Kaktusa, uciekaja w gore, zbierane tapnieciem ---
+# --- Krople wody: pojawiaja sie z Kaktusa, lataja losowo nad plansza odbijajac
+# sie od jej krawedzi, i czekaja na tapniecie (nie znikaja same) ---
 func _spawn_water_drop(origin: Vector2, value: int) -> void:
 	# hit_area to wieksze, niewidoczne pole reagujace na tapniecie; visual to
 	# mniejsza ikonka kropli wysrodkowana wewnatrz niego.
@@ -727,6 +729,8 @@ func _spawn_water_drop(origin: Vector2, value: int) -> void:
 	hit_area.size = Vector2(WATER_DROP_TAP_SIZE, WATER_DROP_TAP_SIZE)
 	var visual_offset := (WATER_DROP_TAP_SIZE - WATER_DROP_VISUAL_SIZE) / 2
 	hit_area.position = origin + Vector2(CELL / 2 - WATER_DROP_TAP_SIZE / 2, -10 - visual_offset)
+	hit_area.position.x = clamp(hit_area.position.x, GRID_LEFT, GRID_LEFT + COLS * CELL - WATER_DROP_TAP_SIZE)
+	hit_area.position.y = clamp(hit_area.position.y, GRID_TOP, GRID_TOP + ROWS * CELL - WATER_DROP_TAP_SIZE)
 	hit_area.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(hit_area)
 
@@ -734,7 +738,13 @@ func _spawn_water_drop(origin: Vector2, value: int) -> void:
 	visual.position = Vector2(visual_offset, visual_offset)
 	hit_area.add_child(visual)
 
-	var drop := {"node": hit_area, "vx": randf_range(-10.0, 10.0), "vy": randf_range(24.0, 40.0), "life": 6.0, "value": value}
+	var angle := randf_range(0.0, TAU)
+	var drop := {
+		"node": hit_area,
+		"vx": cos(angle) * WATER_DROP_SPEED,
+		"vy": sin(angle) * WATER_DROP_SPEED,
+		"value": value,
+	}
 	hit_area.gui_input.connect(_on_water_drop_gui_input.bind(drop))
 	water_drops.append(drop)
 
@@ -749,16 +759,20 @@ func _on_water_drop_gui_input(event: InputEvent, drop: Dictionary) -> void:
 	_update_hud()
 
 func _update_water_drops(delta: float) -> void:
-	var to_remove := []
+	var min_x := float(GRID_LEFT)
+	var max_x := float(GRID_LEFT + COLS * CELL - WATER_DROP_TAP_SIZE)
+	var min_y := float(GRID_TOP)
+	var max_y := float(GRID_TOP + ROWS * CELL - WATER_DROP_TAP_SIZE)
 	for drop in water_drops:
-		drop["node"].position.y -= drop["vy"] * delta
-		drop["node"].position.x += drop["vx"] * delta
-		drop["life"] -= delta
-		if drop["life"] <= 0.0:
-			to_remove.append(drop)
-	for drop in to_remove:
-		drop["node"].queue_free()
-		water_drops.erase(drop)
+		var node: Control = drop["node"]
+		var pos: Vector2 = node.position + Vector2(drop["vx"], drop["vy"]) * delta
+		if pos.x < min_x or pos.x > max_x:
+			drop["vx"] *= -1.0
+			pos.x = clamp(pos.x, min_x, max_x)
+		if pos.y < min_y or pos.y > max_y:
+			drop["vy"] *= -1.0
+			pos.y = clamp(pos.y, min_y, max_y)
+		node.position = pos
 
 # --- Nawozy: pojawiaja sie po pokonaniu rosliny, zbierane tapnieciem ---
 func _spawn_fertilizer_drop(origin: Vector2) -> void:
