@@ -7,7 +7,8 @@ extends RefCounted
 #       "melee"     kontratakuje szkodnika w chwili gdy ten ja gryzie (pole "counter_dmg")
 #       "freeze"    jednorazowa: gdy szkodnik do niej dotrze, spowalnia caly jej rzad i znika
 #       "bomb"      jednorazowa: po czasie "fuse_time" wybucha, raniac wszystko w pobliskich polach
-#       "gust"      jednorazowa: gdy szkodnik do niej dotrze, rani i odrzuca caly jej rzad, po czym znika
+#       "gust"      jednorazowa: gdy JAKIKOLWIEK szkodnik pojawi sie w jej rzedzie
+#                   (nie trzeba czekac, az ja dotknie), rani i odrzuca caly rzad, po czym znika
 const TYPES := [
 	{
 		"name": "Kukurydza", "cost": 50, "hp": 100, "role": "shooter",

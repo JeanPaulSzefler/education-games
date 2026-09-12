@@ -508,6 +508,13 @@ func _update_plants(delta: float) -> void:
 					if plant["fuse_timer"] <= 0.0:
 						plant["used"] = true
 						_trigger_bomb(plant, pt)
+			"gust":
+				# Jednorazowa: wyzwala sie od razu, gdy jakikolwiek szkodnik
+				# pojawi sie w jej rzedzie - nie trzeba czekac, az ja dotknie.
+				if not plant["used"]:
+					if not _find_enemy_in_row(plant["row"]).is_empty():
+						plant["used"] = true
+						_trigger_gust(plant, pt)
 			_:
 				pass
 
@@ -562,15 +569,12 @@ func _update_enemies(delta: float) -> void:
 		if blocking_plant != null:
 			var bpt = PLANT_TYPES[blocking_plant["type_idx"]]
 
-			# Rosliny jednorazowe reagujace na kontakt: aktywuja sie raz i znikaja.
+			# Roslina jednorazowa reagujaca na kontakt: aktywuje sie raz i znika.
+			# ("gust" nie jest tu obslugiwany - wyzwala sie wczesniej, w
+			# _update_plants(), od razu gdy szkodnik pojawi sie w jej rzedzie.)
 			if bpt["role"] == "freeze" and not blocking_plant["used"]:
 				blocking_plant["used"] = true
 				_trigger_freeze(blocking_plant, bpt)
-				e["bite_timer"] = 0.0
-				continue
-			if bpt["role"] == "gust" and not blocking_plant["used"]:
-				blocking_plant["used"] = true
-				_trigger_gust(blocking_plant, bpt)
 				e["bite_timer"] = 0.0
 				continue
 
