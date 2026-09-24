@@ -21,11 +21,11 @@ const TYPES := [
 	},
 	{
 		"name": "Kaktus", "cost": 25, "hp": 80, "role": "generator",
-		"water_interval": 7.0, "water_value": 20, "unlock_level": 1,
+		"water_interval": 9.0, "water_value": 20, "unlock_level": 1,
 		"texture": "res://assets/sprites/plants/cactus.png",
 	},
 	{
-		"name": "Lisc Bananowca", "cost": 75, "hp": 400, "role": "wall",
+		"name": "Lisc Bananowca", "cost": 50, "hp": 400, "role": "wall",
 		"unlock_level": 3,
 		"texture": "res://assets/sprites/plants/banana_leaf.png",
 	},
@@ -35,7 +35,7 @@ const TYPES := [
 		"texture": "res://assets/sprites/plants/nettle.png",
 	},
 	{
-		"name": "Bitny Brokul", "cost": 70, "hp": 220, "role": "melee",
+		"name": "Bitny Brokul", "cost": 60, "hp": 220, "role": "melee",
 		"counter_dmg": 30, "unlock_level": 12,
 		"texture": "res://assets/sprites/plants/broccoli.png",
 	},
@@ -50,7 +50,7 @@ const TYPES := [
 		"texture": "res://assets/sprites/plants/bomb_nut.png",
 	},
 	{
-		"name": "Wichurowy", "cost": 65, "hp": 40, "role": "gust",
+		"name": "Wichurowy", "cost": 60, "hp": 40, "role": "gust",
 		"gust_dmg": 220, "knockback": 130.0, "unlock_level": 7,
 		"texture": "res://assets/sprites/plants/gust_leaf.png",
 	},

@@ -5,11 +5,14 @@ const VIEWPORT_WIDTH := 1280
 const VIEWPORT_HEIGHT := 720
 
 # --- Grid layout ---
-const COLS := 13
+const COLS := 10
 const ROWS := 5
 const CELL := 88
-const GRID_LEFT := 68
+# 1280 - COLS * CELL - 68: po prawej zostaje ten sam margines co dawniej na
+# wchodzacych wrogow.
+const GRID_LEFT := 332
 const GRID_TOP := 92
+const GRID_CENTER_X := GRID_LEFT + COLS * CELL / 2.0
 
 # --- Enemy types (mix of junk). bite_interval/bite_dmg = jak czesto i ile
 # szkodnik "odgryza" z rosliny, ktora go blokuje. ---
@@ -51,6 +54,20 @@ const FERTILIZER_BOOST_DURATION := 9.0
 # gracz mial szanse zareagowac (np. postawic Bumorzecha).
 const BOSS_TELEGRAPH_TIME := 1.0
 
+# --- Pionowy pasek po lewej (licznik wody, kafelki roslin, nawoz) ---
+const SIDEBAR_X := 16.0
+const SIDEBAR_TOP := 16.0
+const WATER_ICON_SIZE := 40
+const TILE_WIDTH := 300.0
+const TILE_HEIGHT := 76.0
+const TILE_GAP := 8.0
+const TILE_ICON_SIZE := 64
+const TILE_BORDER_COLOR := Color(0.35, 0.3, 0.22)
+const TILE_SELECTED_BORDER_COLOR := Color(0.95, 0.85, 0.15)
+const TILE_UNAFFORDABLE_MODULATE := Color(0.45, 0.45, 0.45)
+
+const START_WATER := 100
+
 var PLANT_TYPES: Array
 var BOSS_TYPES: Array
 var waves := []
@@ -61,7 +78,7 @@ var between_waves_timer := 0.0
 var wave_in_progress := false
 var boss_spawned := false
 
-var water := 150
+var water := START_WATER
 var fertilizer := 0
 var fertilizer_mode := false
 
@@ -74,15 +91,20 @@ var water_drops := []
 var fertilizer_drops := []
 var selected_plant_type := -1
 var game_over := false
-var water_label: Label
-var fertilizer_label: Label
+var water_count_label: Label
 var wave_label: Label
 var message_label: Label
-var plant_buttons := []
-var fertilizer_button: Button
+# {"plant_idx", "button", "border_sb"} - jeden wpis na kafelek rosliny w pasku
+var plant_tiles := []
+# {"button", "border_sb", "count_label"} - kafelek nawozu (ten sam styl co rosliny)
+var fertilizer_tile: Dictionary
 var boss_name_label: Label
 var boss_bar_bg: ColorRect
 var boss_bar_fg: ColorRect
+
+# Tekstura ostatniego wroga/bossa, ktory dotarl do domu - do duzej ikonki na
+# ekranie przegranej (runda C, C7).
+var last_enemy_texture := ""
 
 func _ready() -> void:
 	randomize()
@@ -95,8 +117,9 @@ func _ready() -> void:
 	_build_background()
 	_build_grid_visual()
 	_build_hud()
+	_build_water_counter()
 	_build_plant_bar()
-	_build_fertilizer_button()
+	_build_fertilizer_tile()
 	_update_hud()
 
 func _current_level() -> Dictionary:
@@ -125,7 +148,7 @@ func _build_background() -> void:
 	var bg := ColorRect.new()
 	bg.color = Color(0.55, 0.45, 0.3)
 	bg.position = Vector2(0, 0)
-	bg.size = Vector2(VIEWPORT_WIDTH, GRID_TOP + ROWS * CELL)
+	bg.size = Vector2(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
 	add_child(bg)
 
 func _build_grid_visual() -> void:
@@ -153,41 +176,32 @@ func _build_grid_visual() -> void:
 func _build_hud() -> void:
 	var level_title := Label.new()
 	level_title.text = LevelData.LEVELS[GameState.current_level_index]["name"]
-	level_title.position = Vector2(20, 4)
+	level_title.position = Vector2(GRID_LEFT, 4)
 	level_title.add_theme_font_size_override("font_size", 16)
 	add_child(level_title)
 
-	water_label = Label.new()
-	water_label.position = Vector2(20, 24)
-	water_label.add_theme_font_size_override("font_size", 26)
-	add_child(water_label)
-
-	fertilizer_label = Label.new()
-	fertilizer_label.position = Vector2(230, 30)
-	fertilizer_label.add_theme_font_size_override("font_size", 20)
-	fertilizer_label.add_theme_color_override("font_color", Color(0.85, 0.65, 0.15))
-	add_child(fertilizer_label)
-
 	wave_label = Label.new()
-	wave_label.position = Vector2(20, 52)
+	wave_label.position = Vector2(GRID_LEFT, 26)
 	wave_label.add_theme_font_size_override("font_size", 18)
 	add_child(wave_label)
 
 	message_label = Label.new()
-	message_label.position = Vector2(20, GRID_TOP + ROWS * CELL + 8)
+	message_label.position = Vector2(GRID_LEFT, GRID_TOP + ROWS * CELL + 8)
 	message_label.add_theme_font_size_override("font_size", 20)
 	add_child(message_label)
 
-	# Pasek HP bossa: na stale u gory ekranu, widoczny tylko gdy boss zyje.
+	# Pasek HP bossa: na stale nad siatka, wysrodkowany wzgledem niej (nie
+	# calego ekranu, bo po lewej jest teraz pasek roslin), widoczny tylko
+	# gdy boss zyje.
 	boss_name_label = Label.new()
-	boss_name_label.position = Vector2(VIEWPORT_WIDTH / 2 - 150, 2)
+	boss_name_label.position = Vector2(GRID_CENTER_X - 150, 2)
 	boss_name_label.add_theme_font_size_override("font_size", 18)
 	boss_name_label.visible = false
 	add_child(boss_name_label)
 
 	boss_bar_bg = ColorRect.new()
 	boss_bar_bg.color = Color(0.1, 0.1, 0.1, 0.85)
-	boss_bar_bg.position = Vector2(VIEWPORT_WIDTH / 2 - 150, 24)
+	boss_bar_bg.position = Vector2(GRID_CENTER_X - 150, 24)
 	boss_bar_bg.size = Vector2(300, 14)
 	boss_bar_bg.visible = false
 	add_child(boss_bar_bg)
@@ -199,32 +213,97 @@ func _build_hud() -> void:
 	boss_bar_fg.visible = false
 	add_child(boss_bar_fg)
 
+func _build_water_counter() -> void:
+	var icon := _make_sprite(WATER_DROP_TEXTURE, WATER_ICON_SIZE)
+	icon.position = Vector2(SIDEBAR_X, SIDEBAR_TOP)
+	add_child(icon)
+
+	water_count_label = Label.new()
+	water_count_label.position = Vector2(SIDEBAR_X + WATER_ICON_SIZE + 10, SIDEBAR_TOP - 4)
+	water_count_label.add_theme_font_size_override("font_size", 30)
+	add_child(water_count_label)
+
+func _sidebar_tiles_top() -> float:
+	return SIDEBAR_TOP + WATER_ICON_SIZE + 18.0
+
+# Wspolny wyglad kafelka w pasku po lewej (roslina albo nawoz): Button z
+# wlasnym StyleBoxFlat i ikonka po lewej; dzieci maja mouse_filter = IGNORE,
+# zeby tapniecie zawsze trafialo w sam przycisk.
+func _build_tile(y: float, icon_texture: String) -> Dictionary:
+	var btn := Button.new()
+	btn.position = Vector2(SIDEBAR_X, y)
+	btn.size = Vector2(TILE_WIDTH, TILE_HEIGHT)
+	btn.flat = true
+	btn.focus_mode = Control.FOCUS_NONE
+
+	var border_sb := StyleBoxFlat.new()
+	border_sb.bg_color = Color(0.16, 0.22, 0.14)
+	border_sb.border_width_left = 4
+	border_sb.border_width_right = 4
+	border_sb.border_width_top = 4
+	border_sb.border_width_bottom = 4
+	border_sb.border_color = TILE_BORDER_COLOR
+	border_sb.corner_radius_top_left = 10
+	border_sb.corner_radius_top_right = 10
+	border_sb.corner_radius_bottom_left = 10
+	border_sb.corner_radius_bottom_right = 10
+	for state in ["normal", "hover", "pressed"]:
+		btn.add_theme_stylebox_override(state, border_sb)
+	add_child(btn)
+
+	var icon := _make_sprite(icon_texture, TILE_ICON_SIZE)
+	icon.position = Vector2(10, (TILE_HEIGHT - TILE_ICON_SIZE) / 2.0)
+	btn.add_child(icon)
+
+	return {"button": btn, "border_sb": border_sb}
+
 func _build_plant_bar() -> void:
-	var bar_y := GRID_TOP + ROWS * CELL + 36
+	var tiles_top := _sidebar_tiles_top()
 	var loadout: Array = GameState.current_loadout
 	if loadout.is_empty():
 		# Np. Main.tscn odpalone wprost z edytora, bez przejscia przez
 		# PlantSelect - pokaz wszystkie odblokowane rosliny (max talia).
 		var unlocked := GameState.unlocked_plant_indices()
 		loadout = unlocked.slice(0, min(GameState.MAX_LOADOUT, unlocked.size()))
+	plant_tiles.clear()
 	for i in range(loadout.size()):
 		var plant_idx: int = loadout[i]
 		var pt = PLANT_TYPES[plant_idx]
-		var btn := Button.new()
-		btn.text = "%s\n%d kropel" % [pt["name"], pt["cost"]]
-		btn.position = Vector2(20 + i * 150, bar_y)
-		btn.size = Vector2(140, 56)
-		btn.pressed.connect(_on_plant_button_pressed.bind(plant_idx))
-		add_child(btn)
-		plant_buttons.append(btn)
+		var y := tiles_top + i * (TILE_HEIGHT + TILE_GAP)
+		var tile := _build_tile(y, pt["texture"])
+		tile["plant_idx"] = plant_idx
 
-func _build_fertilizer_button() -> void:
-	var bar_y := GRID_TOP + ROWS * CELL + 96
-	fertilizer_button = Button.new()
-	fertilizer_button.position = Vector2(20, bar_y)
-	fertilizer_button.size = Vector2(180, 40)
-	fertilizer_button.pressed.connect(_on_fertilizer_button_pressed)
-	add_child(fertilizer_button)
+		# Koszt: liczba na tle malej ikonki kropli, przy prawej krawedzi kafelka.
+		var cost_icon := _make_sprite(WATER_DROP_TEXTURE, 34)
+		cost_icon.position = Vector2(TILE_WIDTH - 66, (TILE_HEIGHT - 34) / 2.0)
+		tile["button"].add_child(cost_icon)
+
+		var cost_label := Label.new()
+		cost_label.text = str(pt["cost"])
+		cost_label.position = Vector2(TILE_WIDTH - 66, (TILE_HEIGHT - 24) / 2.0)
+		cost_label.size = Vector2(34, 24)
+		cost_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		cost_label.add_theme_font_size_override("font_size", 15)
+		cost_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		tile["button"].add_child(cost_label)
+
+		tile["button"].pressed.connect(_on_plant_button_pressed.bind(plant_idx))
+		plant_tiles.append(tile)
+
+func _build_fertilizer_tile() -> void:
+	var loadout_size: int = plant_tiles.size()
+	var y := _sidebar_tiles_top() + loadout_size * (TILE_HEIGHT + TILE_GAP)
+	fertilizer_tile = _build_tile(y, FERTILIZER_TEXTURE)
+
+	var count_label := Label.new()
+	count_label.position = Vector2(TILE_ICON_SIZE + 22, (TILE_HEIGHT - 30) / 2.0)
+	count_label.size = Vector2(60, 30)
+	count_label.add_theme_font_size_override("font_size", 22)
+	count_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fertilizer_tile["button"].add_child(count_label)
+	fertilizer_tile["count_label"] = count_label
+
+	fertilizer_tile["button"].pressed.connect(_on_fertilizer_button_pressed)
 
 func _on_plant_button_pressed(idx: int) -> void:
 	if game_over:
@@ -259,7 +338,7 @@ func _is_tap_press(event: InputEvent) -> bool:
 
 func _try_place_plant(col: int, row: int) -> void:
 	if selected_plant_type < 0:
-		message_label.text = "Wybierz roslin z paska ponizej"
+		message_label.text = "Wybierz rosline z paska po lewej"
 		return
 	if blocked_cells.has(_cell_key(col, row)):
 		message_label.text = "Na tym polu nie mozna sadzic"
@@ -292,6 +371,8 @@ func _try_place_plant(col: int, row: int) -> void:
 		"disable_timer": 0.0, "used": false,
 		"fuse_timer": pt.get("fuse_time", 0.0),
 		"poison_timer": 0.0, "poison_dmg": 0,
+		# Pozycja bazowa, do ktorej wracaja animacje strzalu/kontrataku (runda C).
+		"base_pos": node.position,
 	}
 	plants.append(plant)
 	grid_occupancy[col][row] = plant
@@ -313,10 +394,19 @@ func _try_apply_fertilizer(col: int, row: int) -> void:
 	_update_hud()
 
 func _update_hud() -> void:
-	water_label.text = "Krople wody: %d" % water
-	fertilizer_label.text = "Nawozy: %d" % fertilizer
-	fertilizer_button.text = "Uzyj nawozu (%d)" % fertilizer
-	fertilizer_button.disabled = fertilizer <= 0
+	water_count_label.text = str(water)
+
+	for tile in plant_tiles:
+		var pt = PLANT_TYPES[tile["plant_idx"]]
+		var affordable: bool = water >= pt["cost"]
+		tile["button"].modulate = Color(1, 1, 1) if affordable else TILE_UNAFFORDABLE_MODULATE
+		var is_selected: bool = selected_plant_type == tile["plant_idx"]
+		tile["border_sb"].border_color = TILE_SELECTED_BORDER_COLOR if is_selected else TILE_BORDER_COLOR
+
+	fertilizer_tile["count_label"].text = str(fertilizer)
+	fertilizer_tile["button"].modulate = Color(1, 1, 1) if fertilizer > 0 else TILE_UNAFFORDABLE_MODULATE
+	fertilizer_tile["border_sb"].border_color = TILE_SELECTED_BORDER_COLOR if fertilizer_mode else TILE_BORDER_COLOR
+
 	if fertilizer_mode:
 		wave_label.text = "Tryb nawozu: tapnij wlasna rosline, by ja wzmocnic"
 	elif selected_plant_type >= 0:
@@ -387,6 +477,9 @@ func _spawn_enemy(type_idx: int, row: int) -> void:
 		"bite_timer": 0.0, "bar": bar, "hurt_timer": HEALTH_BAR_HIDE_DELAY + 1.0,
 		"slow_timer": 0.0, "slow_factor": 1.0, "is_boss": false,
 		"water_thief": et.get("water_thief", false), "steal_target": null,
+		# Chodzenie/jedzenie (runda C): base_y do animacji podskakiwania,
+		# faza losowa zeby wrogowie nie kolysali sie w idealnym takcie.
+		"base_y": node.position.y, "phase": randf_range(0.0, TAU), "anim_t": 0.0,
 	})
 
 func _spawn_boss(boss_idx: int) -> void:
@@ -405,6 +498,7 @@ func _spawn_boss(boss_idx: int) -> void:
 		"slow_timer": 0.0, "slow_factor": 1.0,
 		"is_boss": true, "boss_type_idx": boss_idx,
 		"special_timer": bt["special_interval"], "telegraphing": false,
+		"base_y": node.position.y, "phase": randf_range(0.0, TAU), "anim_t": 0.0,
 	})
 	_show_boss_bar(bt["name"])
 
@@ -436,7 +530,7 @@ func _update_plants(delta: float) -> void:
 						var target := _find_enemy_in_row(plant["row"])
 						if not target.is_empty():
 							plant["atk_timer"] = pt["interval"]
-							_spawn_projectile(plant["row"], plant["node"].position.x + CELL, pt["dmg"] * boost, pt.get("pierce", false))
+							_animate_shooter_shot(plant, pt["dmg"] * boost, pt.get("pierce", false))
 			"generator":
 				plant["gen_timer"] -= delta
 				if plant["gen_timer"] <= 0.0:
@@ -465,6 +559,30 @@ func _update_plants(delta: float) -> void:
 	for plant in dead:
 		_remove_plant(plant)
 
+# Widoczne wyrzucenie pocisku (Kukurydza, Pokrzywa): nabiera (odchylenie w
+# lewo + skala 0.9 w poziomie), wyrzut (do przodu + skala 1.1, w tej chwili
+# rodzi sie pocisk z bazowej pozycji rosliny - przesuniecie jest tylko
+# wizualne, trafienia licza sie jak dotad), powrot do pozycji bazowej.
+func _animate_shooter_shot(plant: Dictionary, dmg: float, pierce: bool) -> void:
+	var node = plant["node"]
+	var base_pos: Vector2 = plant["base_pos"]
+	var row: int = plant["row"]
+	var running_tween = plant.get("anim_tween")
+	if running_tween != null and is_instance_valid(running_tween):
+		running_tween.kill()
+	node.position = base_pos
+	node.scale = Vector2(1, 1)
+
+	var tw: Tween = node.create_tween()
+	plant["anim_tween"] = tw
+	tw.tween_property(node, "position", base_pos + Vector2(-6, 0), 0.08)
+	tw.parallel().tween_property(node, "scale:x", 0.9, 0.08)
+	tw.tween_callback(func(): _spawn_projectile(row, base_pos.x + CELL, dmg, pierce))
+	tw.tween_property(node, "position", base_pos + Vector2(8, 0), 0.08)
+	tw.parallel().tween_property(node, "scale:x", 1.1, 0.08)
+	tw.tween_property(node, "position", base_pos, 0.1)
+	tw.parallel().tween_property(node, "scale:x", 1.0, 0.1)
+
 func _find_enemy_in_row(row: int) -> Dictionary:
 	for e in enemies:
 		if e["row"] == row:
@@ -484,8 +602,13 @@ func _find_fully_entered_enemy_in_row(row: int) -> Dictionary:
 
 func _spawn_projectile(row: int, x: float, dmg: float, pierce: bool = false) -> void:
 	var node := _make_sprite(THORN_TEXTURE, 16)
-	node.position = Vector2(x, GRID_TOP + row * CELL + CELL / 2 - 8)
+	# "Pyszczek" rosliny: prawa krawedz sprite'a, ok. 40% wysokosci od gory
+	# (a nie srodek rzedu) - czysto wizualne, trafienia licza sie po x/rzedzie.
+	node.position = Vector2(x, GRID_TOP + row * CELL + 0.4 * (CELL - 16))
+	node.scale = Vector2(0.4, 0.4)
 	add_child(node)
+	var tw := node.create_tween()
+	tw.tween_property(node, "scale", Vector2(1, 1), 0.1)
 	projectiles.append({"node": node, "row": row, "x": x, "dmg": dmg, "pierce": pierce, "hit_enemies": []})
 
 func _update_projectiles(delta: float) -> void:
@@ -518,6 +641,7 @@ func _update_enemies(delta: float) -> void:
 			continue
 
 		var blocking_plant = _plant_ahead(e)
+		var is_walking := false
 		if blocking_plant != null:
 			var bpt = PLANT_TYPES[blocking_plant["type_idx"]]
 
@@ -536,9 +660,11 @@ func _update_enemies(delta: float) -> void:
 				e["bite_timer"] = e["bite_interval"]
 				blocking_plant["hp"] -= e["bite_dmg"]
 				_flash_health_bar(blocking_plant)
+				_animate_bite(e, blocking_plant)
 				if bpt["role"] == "melee":
 					e["hp"] -= bpt["counter_dmg"]
 					_flash_health_bar(e)
+					_animate_melee_punch(blocking_plant, e["node"].position + e["node"].size / 2.0)
 				if blocking_plant["hp"] <= 0:
 					_remove_plant(blocking_plant)
 		else:
@@ -548,6 +674,21 @@ func _update_enemies(delta: float) -> void:
 			e["node"].position.x = e["x"]
 			if e["x"] <= GRID_LEFT:
 				reached_house = true
+				last_enemy_texture = BOSS_TYPES[e["boss_type_idx"]]["texture"] if e["is_boss"] else ENEMY_TYPES[e["type_idx"]]["texture"]
+			# Chodzenie: podskakiwanie/kolysanie tylko gdy wrog faktycznie sie
+			# porusza (nie jest calkowicie unieruchomiony przez Mrozoroslinke).
+			is_walking = e["slow_timer"] <= 0.0 or e["slow_factor"] > 0.0
+
+		if is_walking:
+			e["anim_t"] += delta
+			var bob: float = 6.0 if e["is_boss"] else 3.0
+			var sway: float = 0.05 if e["is_boss"] else 0.08
+			var wave := sin(e["anim_t"] * 10.0 + e["phase"])
+			e["node"].position.y = e["base_y"] + wave * bob
+			e["node"].rotation = wave * sway
+		else:
+			e["node"].position.y = e["base_y"]
+			e["node"].rotation = 0.0
 
 		if e["slow_timer"] > 0.0:
 			e["slow_timer"] -= delta
@@ -577,6 +718,101 @@ func _remove_plant(plant: Dictionary, drop_fertilizer: bool = true) -> void:
 	plant["node"].queue_free()
 	plants.erase(plant)
 
+# --- Proste ksztalty (kolko/gwiazdka) rysowane w kodzie na potrzeby animacji
+# (runda C) - kazdy Polygon2D uzywajacy tych punktow ma promien 1.0, wlasciwy
+# rozmiar ustawia sie przez node.scale. ---
+func _circle_points(segments: int) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	for i in range(segments):
+		var angle := TAU * i / segments
+		pts.append(Vector2(cos(angle), sin(angle)))
+	return pts
+
+func _star_points(spikes: int, inner_ratio: float) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	var total := spikes * 2
+	for i in range(total):
+		var r := 1.0 if i % 2 == 0 else inner_ratio
+		var angle := TAU * i / total - PI / 2.0
+		pts.append(Vector2(cos(angle), sin(angle)) * r)
+	return pts
+
+# --- "Jedzenie": przy kazdym ugryzieniu wrog wypada w lewo i splaszcza sie,
+# a z rosliny odlatuja zielone okruszki. ---
+func _animate_bite(e: Dictionary, plant: Dictionary) -> void:
+	var node = e["node"]
+	var lunge: float = 14.0 if e["is_boss"] else 8.0
+	var half_dur: float = 0.15 if e["is_boss"] else 0.075
+	var base_x: float = node.position.x
+
+	var running_tween = e.get("bite_tween")
+	if running_tween != null and is_instance_valid(running_tween):
+		running_tween.kill()
+	node.scale = Vector2(1, 1)
+
+	var tw: Tween = node.create_tween()
+	e["bite_tween"] = tw
+	tw.tween_property(node, "position:x", base_x - lunge, half_dur)
+	tw.parallel().tween_property(node, "scale:y", 0.85, half_dur)
+	tw.tween_property(node, "position:x", base_x, half_dur)
+	tw.parallel().tween_property(node, "scale:y", 1.0, half_dur)
+
+	_spawn_bite_crumbs(plant["node"].position + Vector2(CELL / 2.0, CELL / 2.0))
+
+func _spawn_bite_crumbs(origin: Vector2) -> void:
+	var count := randi_range(3, 4)
+	for i in range(count):
+		var crumb := ColorRect.new()
+		crumb.color = Color(0.35, 0.55, 0.2)
+		crumb.size = Vector2(6, 6)
+		crumb.position = origin + Vector2(randf_range(-6.0, 6.0), randf_range(-6.0, 6.0))
+		crumb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(crumb)
+		var drift := Vector2(randf_range(-24.0, 24.0), randf_range(-40.0, -10.0))
+		var tw := crumb.create_tween()
+		tw.tween_property(crumb, "position", crumb.position + drift, 0.4)
+		tw.parallel().tween_property(crumb, "modulate:a", 0.0, 0.4)
+		tw.tween_callback(crumb.queue_free)
+
+# --- Cios piescia Bitnego Brokula przy kontrataku. ---
+func _animate_melee_punch(plant: Dictionary, enemy_center: Vector2) -> void:
+	var node = plant["node"]
+	var base_pos: Vector2 = plant["base_pos"]
+
+	var running_tween = plant.get("anim_tween")
+	if running_tween != null and is_instance_valid(running_tween):
+		running_tween.kill()
+	node.position = base_pos
+
+	var tw: Tween = node.create_tween()
+	plant["anim_tween"] = tw
+	tw.tween_property(node, "position", base_pos + Vector2(14, 0), 0.075)
+	tw.tween_property(node, "position", base_pos, 0.075)
+
+	_spawn_punch_effect(enemy_center)
+
+func _spawn_punch_effect(center: Vector2) -> void:
+	var effect := Node2D.new()
+	effect.position = center
+	add_child(effect)
+
+	var fist := Polygon2D.new()
+	fist.polygon = _circle_points(10)
+	fist.scale = Vector2(13, 13)
+	fist.color = Color(0.25, 0.75, 0.25)
+	effect.add_child(fist)
+
+	var star := Polygon2D.new()
+	star.polygon = _star_points(5, 0.45)
+	star.scale = Vector2(5, 5)
+	star.color = Color(0.95, 0.85, 0.2)
+	effect.add_child(star)
+
+	var tw := effect.create_tween()
+	tw.tween_property(star, "scale", Vector2(16, 16), 0.2)
+	tw.parallel().tween_property(effect, "modulate:a", 0.0, 0.2)
+	tw.tween_callback(effect.queue_free)
+
 # --- Rosliny jednorazowe: mrozoroslinka, bumorzech, wichurowy ---
 func _trigger_freeze(plant: Dictionary, pt: Dictionary, target: Dictionary) -> void:
 	# Mrozoroslinka znika, ale szkodnik, ktory na nia stanal, zostaje
@@ -588,6 +824,7 @@ func _trigger_freeze(plant: Dictionary, pt: Dictionary, target: Dictionary) -> v
 	_remove_plant(plant, false)
 
 func _trigger_gust(plant: Dictionary, pt: Dictionary) -> void:
+	_spawn_gust_cloud(plant)
 	var dead := []
 	for e in enemies:
 		if e["row"] == plant["row"]:
@@ -602,7 +839,34 @@ func _trigger_gust(plant: Dictionary, pt: Dictionary) -> void:
 		enemies.erase(e)
 	_remove_plant(plant, false)
 
+# Przesuwajaca sie niebieska chmurka: startuje w polu rosliny i leci do
+# prawej krawedzi planszy w tym rzedzie, potem zanika. Sam efekt odrzutu
+# wrogow dzieje sie jak dotad, niezaleznie od animacji.
+func _spawn_gust_cloud(plant: Dictionary) -> void:
+	var start_x: float = plant["node"].position.x
+	var y: float = GRID_TOP + plant["row"] * CELL + CELL / 2.0
+	var end_x: float = float(GRID_LEFT + COLS * CELL)
+
+	var cloud := Node2D.new()
+	cloud.position = Vector2(start_x, y)
+	add_child(cloud)
+
+	var puff_offsets := [Vector2(-10, -6), Vector2(6, -10), Vector2(0, 8), Vector2(16, 0)]
+	for i in range(puff_offsets.size()):
+		var puff := Polygon2D.new()
+		puff.polygon = _circle_points(12)
+		puff.scale = Vector2(18.0 + i * 2.0, 18.0 + i * 2.0)
+		puff.position = puff_offsets[i]
+		puff.color = Color(0.6, 0.8, 1.0, 0.55)
+		cloud.add_child(puff)
+
+	var tw := cloud.create_tween()
+	tw.tween_property(cloud, "position:x", end_x, 0.5)
+	tw.tween_property(cloud, "modulate:a", 0.0, 0.2)
+	tw.tween_callback(cloud.queue_free)
+
 func _trigger_bomb(plant: Dictionary, pt: Dictionary) -> void:
+	_spawn_bomb_explosion(plant)
 	var blast_x := float(GRID_LEFT + plant["col"] * CELL)
 	var radius_cells: int = pt["blast_radius_cells"]
 	var dead := []
@@ -616,6 +880,54 @@ func _trigger_bomb(plant: Dictionary, pt: Dictionary) -> void:
 		e["node"].queue_free()
 		enemies.erase(e)
 	_remove_plant(plant, false)
+
+# Wybuch Bumorzecha: pomaranczowe kolko rosnie do ok. 3 pol srednicy z
+# zoltym srodkiem, jednoczesnie zanikajac, plus krotkie biale miegniecie
+# i lekkie potrzasniecie plansza.
+func _spawn_bomb_explosion(plant: Dictionary) -> void:
+	var center := Vector2(
+		GRID_LEFT + plant["col"] * CELL + CELL / 2.0,
+		GRID_TOP + plant["row"] * CELL + CELL / 2.0
+	)
+	var effect := Node2D.new()
+	effect.position = center
+	add_child(effect)
+
+	var outer := Polygon2D.new()
+	outer.polygon = _circle_points(20)
+	outer.color = Color(0.95, 0.5, 0.1, 0.85)
+	outer.scale = Vector2(4, 4)
+	effect.add_child(outer)
+
+	var inner := Polygon2D.new()
+	inner.polygon = _circle_points(20)
+	inner.color = Color(1.0, 0.9, 0.3, 0.9)
+	inner.scale = Vector2(2, 2)
+	effect.add_child(inner)
+
+	var flash := Polygon2D.new()
+	flash.polygon = _circle_points(20)
+	flash.color = Color(1, 1, 1, 0.9)
+	flash.scale = Vector2(6, 6)
+	effect.add_child(flash)
+
+	var target_radius := CELL * 1.5
+	var tw := effect.create_tween()
+	tw.tween_property(flash, "modulate:a", 0.0, 0.1)
+	tw.parallel().tween_property(outer, "scale", Vector2(target_radius, target_radius), 0.3)
+	tw.parallel().tween_property(outer, "modulate:a", 0.0, 0.3)
+	tw.parallel().tween_property(inner, "scale", Vector2(target_radius * 0.6, target_radius * 0.6), 0.3)
+	tw.parallel().tween_property(inner, "modulate:a", 0.0, 0.3)
+	tw.tween_callback(effect.queue_free)
+
+	_shake_board()
+
+func _shake_board() -> void:
+	var tw := create_tween()
+	tw.tween_property(self, "position", Vector2(4, 0), 0.05)
+	tw.tween_property(self, "position", Vector2(-4, 0), 0.05)
+	tw.tween_property(self, "position", Vector2(4, 0), 0.05)
+	tw.tween_property(self, "position", Vector2(0, 0), 0.05)
 
 # --- Bossowie: telegrafowany atak specjalny ---
 func _update_boss_specials(delta: float) -> void:
@@ -889,6 +1201,9 @@ func _make_sprite(texture_path: String, target_size: int) -> TextureRect:
 	node.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	node.size = Vector2(target_size, target_size)
 	node.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# Wysrodkowany pivot, zeby skalowanie/obrot w animacjach (runda C) dzialy
+	# sie wokol srodka sprite'a, a nie lewego gornego rogu.
+	node.pivot_offset = node.size / 2.0
 	return node
 
 # --- Koniec gry ---
@@ -905,26 +1220,104 @@ func _check_win_condition() -> void:
 func _lose_game() -> void:
 	game_over = true
 	message_label.text = "PRZEGRANA - smieci dotarly do domu!"
+
+	var overlay := ColorRect.new()
+	overlay.color = Color(0.05, 0.05, 0.05, 0.75)
+	overlay.position = Vector2(0, 0)
+	overlay.size = Vector2(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
+	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(overlay)
+
+	var icon := _make_sprite(last_enemy_texture, 320)
+	icon.position = Vector2(VIEWPORT_WIDTH / 2.0 - 160, VIEWPORT_HEIGHT / 2.0 - 220)
+	icon.scale = Vector2(0.01, 0.01)
+	add_child(icon)
+	var icon_tw := icon.create_tween()
+	icon_tw.tween_property(icon, "scale", Vector2(1, 1), 0.5).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+	var lose_label := Label.new()
+	lose_label.text = "Smieci dotarly do domu!"
+	lose_label.add_theme_font_size_override("font_size", 32)
+	lose_label.add_theme_color_override("font_color", Color(0.95, 0.4, 0.3))
+	lose_label.position = Vector2(VIEWPORT_WIDTH / 2.0 - 300, VIEWPORT_HEIGHT / 2.0 + 110)
+	lose_label.size = Vector2(600, 50)
+	lose_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lose_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(lose_label)
+
 	_show_end_buttons()
 
 func _win_game() -> void:
 	game_over = true
 	message_label.text = "WYGRANA - obronles ogrod!"
 	GameState.complete_level(GameState.current_level_index)
-	_show_end_buttons()
+
+	_spawn_confetti()
+
+	var win_label := Label.new()
+	win_label.text = "WYGRANA!"
+	win_label.add_theme_font_size_override("font_size", 64)
+	win_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
+	win_label.position = Vector2(VIEWPORT_WIDTH / 2.0 - 300, VIEWPORT_HEIGHT / 2.0 - 120)
+	win_label.size = Vector2(600, 100)
+	win_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	win_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(win_label)
+
+	var delay := get_tree().create_timer(1.5)
+	delay.timeout.connect(_show_end_buttons)
+
+# Konfetti: kolorowe prostokaciki spadajace z gravitacja i obrotem z gory
+# ekranu. Tekstura kwadratu tworzona w kodzie (bez nowych plikow graficznych).
+func _spawn_confetti() -> void:
+	var particles := CPUParticles2D.new()
+	particles.position = Vector2(VIEWPORT_WIDTH / 2.0, -20.0)
+	particles.texture = _make_square_texture(8)
+	particles.emitting = true
+	particles.one_shot = true
+	particles.amount = 180
+	particles.lifetime = 3.0
+	particles.explosiveness = 0.15
+	particles.emission_shape = CPUParticles2D.EMISSION_SHAPE_RECTANGLE
+	particles.emission_rect_extents = Vector2(VIEWPORT_WIDTH / 2.0, 4.0)
+	particles.direction = Vector2(0, 1)
+	particles.spread = 25.0
+	particles.gravity = Vector2(0, 220.0)
+	particles.initial_velocity_min = 40.0
+	particles.initial_velocity_max = 120.0
+	particles.angular_velocity_min = -180.0
+	particles.angular_velocity_max = 180.0
+	particles.scale_amount_min = 0.5
+	particles.scale_amount_max = 1.0
+
+	var gradient := Gradient.new()
+	gradient.colors = PackedColorArray([
+		Color(0.95, 0.3, 0.3), Color(0.3, 0.6, 0.95), Color(0.95, 0.85, 0.2),
+		Color(0.4, 0.85, 0.4), Color(0.8, 0.4, 0.9),
+	])
+	particles.color_ramp = gradient
+	add_child(particles)
+
+	var cleanup := get_tree().create_timer(3.2)
+	cleanup.timeout.connect(particles.queue_free)
+
+func _make_square_texture(size: int) -> ImageTexture:
+	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	img.fill(Color(1, 1, 1, 1))
+	return ImageTexture.create_from_image(img)
 
 func _show_end_buttons() -> void:
 	var y := GRID_TOP + ROWS * CELL + 150
 	var retry_btn := Button.new()
 	retry_btn.text = "Zagraj ponownie"
-	retry_btn.position = Vector2(20, y)
+	retry_btn.position = Vector2(GRID_LEFT, y)
 	retry_btn.size = Vector2(250, 40)
 	retry_btn.pressed.connect(func(): get_tree().reload_current_scene())
 	add_child(retry_btn)
 
 	var select_btn := Button.new()
 	select_btn.text = "Wybierz poziom"
-	select_btn.position = Vector2(290, y)
+	select_btn.position = Vector2(GRID_LEFT + 270, y)
 	select_btn.size = Vector2(250, 40)
 	select_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/LevelSelect.tscn"))
 	add_child(select_btn)

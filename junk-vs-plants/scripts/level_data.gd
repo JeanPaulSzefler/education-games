@@ -230,7 +230,7 @@ const LEVELS := [
 		"cactus_water_multiplier": 1.4,
 		"blocked_tiles": [[3, 1], [6, 3], [8, 0]],
 		"waves": [
-			[{"type": 0, "row": 0}, {"type": 1, "row": 1}, {"type": 2, "row": 2}, {"type": 3, "row": 3}, {"type": 1, "row": 4}],
+			[{"type": 0, "row": 0}, {"type": 1, "row": 1}, {"type": 2, "row": 2}, {"type": 3, "row": 3}],
 			[{"type": 1, "row": 0}, {"type": 3, "row": 1}, {"type": 0, "row": 2}, {"type": 2, "row": 3}, {"type": 1, "row": 4}, {"type": 0, "row": 4}],
 			[{"type": 0, "row": 0}, {"type": 2, "row": 1}, {"type": 1, "row": 2}, {"type": 3, "row": 2}, {"type": 0, "row": 3}, {"type": 2, "row": 4}],
 			[{"type": 0, "row": 0}, {"type": 1, "row": 0}, {"type": 2, "row": 1}, {"type": 3, "row": 2}, {"type": 1, "row": 3}, {"type": 0, "row": 3}, {"type": 2, "row": 4}],
