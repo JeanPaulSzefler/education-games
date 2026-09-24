@@ -51,74 +51,6 @@ const FERTILIZER_BOOST_DURATION := 9.0
 # gracz mial szanse zareagowac (np. postawic Bumorzecha).
 const BOSS_TELEGRAPH_TIME := 1.0
 
-# --- Levels: kazdy poziom to lista fal, kazda fala to lista {type, row}.
-# "boss" to indeks w BossData.TYPES, spawnowany po ostatniej fali. ---
-# Fale mieszaja pojedynczych szkodnikow z wiekszymi grupami, ostatnia fala
-# na kazdym poziomie jest najwieksza.
-const LEVELS := [
-	{
-		"name": "Poziom 1 - Podworko",
-		"boss": 0,
-		"waves": [
-			[{"type": 0, "row": 2}],
-			[{"type": 0, "row": 1}, {"type": 1, "row": 3}],
-			[{"type": 2, "row": 2}],
-			[{"type": 0, "row": 0}, {"type": 1, "row": 2}, {"type": 0, "row": 4}],
-			[{"type": 0, "row": 0}, {"type": 1, "row": 1}, {"type": 0, "row": 2}, {"type": 1, "row": 3}, {"type": 2, "row": 4}, {"type": 1, "row": 2}],
-		],
-	},
-	{
-		"name": "Poziom 2 - Park",
-		"boss": 1,
-		"waves": [
-			[{"type": 0, "row": 1}, {"type": 0, "row": 3}],
-			[{"type": 2, "row": 2}],
-			[{"type": 1, "row": 0}, {"type": 1, "row": 1}, {"type": 0, "row": 3}, {"type": 1, "row": 4}],
-			[{"type": 1, "row": 2}, {"type": 1, "row": 3}],
-			[{"type": 0, "row": 0}, {"type": 2, "row": 1}, {"type": 1, "row": 2}, {"type": 0, "row": 2}, {"type": 2, "row": 3}, {"type": 1, "row": 4}, {"type": 1, "row": 0}],
-		],
-	},
-	{
-		"name": "Poziom 3 - Wysypisko",
-		"boss": 2,
-		"waves": [
-			[{"type": 1, "row": 0}, {"type": 1, "row": 4}, {"type": 0, "row": 2}],
-			[{"type": 2, "row": 2}],
-			[{"type": 0, "row": 0}, {"type": 2, "row": 1}, {"type": 1, "row": 2}, {"type": 0, "row": 3}, {"type": 2, "row": 4}],
-			[{"type": 1, "row": 1}, {"type": 1, "row": 2}, {"type": 1, "row": 3}],
-			[{"type": 2, "row": 0}, {"type": 0, "row": 0}, {"type": 1, "row": 1}, {"type": 2, "row": 2}, {"type": 1, "row": 2}, {"type": 0, "row": 3}, {"type": 2, "row": 3}, {"type": 1, "row": 4}, {"type": 2, "row": 4}],
-		],
-	},
-	{
-		# Pierwsze utrudnienie: kaktus produkuje wode wolniej (mnoznik odstepu).
-		# Trzecie utrudnienie: Brudna Gabka (type 3) - kradnie krople wody.
-		"name": "Poziom 4 - Sortownia Odpadow",
-		"boss": 3,
-		"cactus_water_multiplier": 1.6,
-		"waves": [
-			[{"type": 2, "row": 2}],
-			[{"type": 0, "row": 0}, {"type": 1, "row": 4}],
-			[{"type": 1, "row": 1}, {"type": 3, "row": 2}, {"type": 1, "row": 3}],
-			[{"type": 2, "row": 1}, {"type": 2, "row": 3}],
-			[{"type": 0, "row": 0}, {"type": 2, "row": 0}, {"type": 1, "row": 1}, {"type": 3, "row": 1}, {"type": 2, "row": 2}, {"type": 1, "row": 3}, {"type": 0, "row": 3}, {"type": 2, "row": 4}, {"type": 1, "row": 4}],
-		],
-	},
-	{
-		# Drugie utrudnienie: dodatkowo pola na planszy, na ktorych nie mozna sadzic.
-		"name": "Poziom 5 - Skladowisko",
-		"boss": 4,
-		"cactus_water_multiplier": 2.0,
-		"blocked_tiles": [[4, 1], [4, 3], [2, 2]],
-		"waves": [
-			[{"type": 2, "row": 2}, {"type": 2, "row": 0}],
-			[{"type": 0, "row": 1}, {"type": 1, "row": 1}, {"type": 3, "row": 3}, {"type": 1, "row": 3}],
-			[{"type": 2, "row": 1}, {"type": 3, "row": 2}, {"type": 2, "row": 3}],
-			[{"type": 1, "row": 0}, {"type": 3, "row": 1}, {"type": 1, "row": 2}, {"type": 3, "row": 3}, {"type": 1, "row": 4}],
-			[{"type": 2, "row": 0}, {"type": 0, "row": 0}, {"type": 1, "row": 0}, {"type": 2, "row": 1}, {"type": 3, "row": 1}, {"type": 2, "row": 2}, {"type": 1, "row": 2}, {"type": 0, "row": 2}, {"type": 2, "row": 3}, {"type": 3, "row": 3}, {"type": 1, "row": 3}, {"type": 2, "row": 4}, {"type": 1, "row": 4}],
-		],
-	},
-]
-
 var PLANT_TYPES: Array
 var BOSS_TYPES: Array
 var waves := []
@@ -156,7 +88,7 @@ func _ready() -> void:
 	randomize()
 	PLANT_TYPES = PlantData.TYPES
 	BOSS_TYPES = BossData.TYPES
-	waves = LEVELS[GameState.current_level_index]["waves"]
+	waves = LevelData.LEVELS[GameState.current_level_index]["waves"]
 	between_waves_timer = 3.0
 	_setup_grid_occupancy()
 	_setup_blocked_cells()
@@ -168,7 +100,7 @@ func _ready() -> void:
 	_update_hud()
 
 func _current_level() -> Dictionary:
-	return LEVELS[GameState.current_level_index]
+	return LevelData.LEVELS[GameState.current_level_index]
 
 func _cactus_water_multiplier() -> float:
 	return _current_level().get("cactus_water_multiplier", 1.0)
@@ -220,7 +152,7 @@ func _build_grid_visual() -> void:
 
 func _build_hud() -> void:
 	var level_title := Label.new()
-	level_title.text = LEVELS[GameState.current_level_index]["name"]
+	level_title.text = LevelData.LEVELS[GameState.current_level_index]["name"]
 	level_title.position = Vector2(20, 4)
 	level_title.add_theme_font_size_override("font_size", 16)
 	add_child(level_title)
@@ -269,13 +201,20 @@ func _build_hud() -> void:
 
 func _build_plant_bar() -> void:
 	var bar_y := GRID_TOP + ROWS * CELL + 36
-	for i in range(PLANT_TYPES.size()):
-		var pt = PLANT_TYPES[i]
+	var loadout: Array = GameState.current_loadout
+	if loadout.is_empty():
+		# Np. Main.tscn odpalone wprost z edytora, bez przejscia przez
+		# PlantSelect - pokaz wszystkie odblokowane rosliny (max talia).
+		var unlocked := GameState.unlocked_plant_indices()
+		loadout = unlocked.slice(0, min(GameState.MAX_LOADOUT, unlocked.size()))
+	for i in range(loadout.size()):
+		var plant_idx: int = loadout[i]
+		var pt = PLANT_TYPES[plant_idx]
 		var btn := Button.new()
 		btn.text = "%s\n%d kropel" % [pt["name"], pt["cost"]]
 		btn.position = Vector2(20 + i * 150, bar_y)
 		btn.size = Vector2(140, 56)
-		btn.pressed.connect(_on_plant_button_pressed.bind(i))
+		btn.pressed.connect(_on_plant_button_pressed.bind(plant_idx))
 		add_child(btn)
 		plant_buttons.append(btn)
 
@@ -452,6 +391,7 @@ func _spawn_enemy(type_idx: int, row: int) -> void:
 
 func _spawn_boss(boss_idx: int) -> void:
 	var bt = BOSS_TYPES[boss_idx]
+	var hp := int(bt["hp"] * _current_level().get("boss_hp_multiplier", 1.0))
 	var row := ROWS / 2
 	var node := _make_sprite(bt["texture"], CELL - 4)
 	var x := float(GRID_LEFT + COLS * CELL)
@@ -459,7 +399,7 @@ func _spawn_boss(boss_idx: int) -> void:
 	add_child(node)
 	var bar := _add_health_bar(node, CELL - 4)
 	enemies.append({
-		"node": node, "hp": bt["hp"], "max_hp": bt["hp"], "row": row, "x": x, "type_idx": -1,
+		"node": node, "hp": hp, "max_hp": hp, "row": row, "x": x, "type_idx": -1,
 		"speed": bt["speed"], "bite_dmg": bt["bite_dmg"], "bite_interval": bt["bite_interval"],
 		"bite_timer": 0.0, "bar": bar, "hurt_timer": HEALTH_BAR_HIDE_DELAY + 1.0,
 		"slow_timer": 0.0, "slow_factor": 1.0,
