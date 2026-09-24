@@ -4,3 +4,6 @@ junk-vs-plants-(*)/
 # Godot editor/import artifacts
 .godot/
 *.import
+
+# Local editor config (machine-specific paths)
+.vscode/
