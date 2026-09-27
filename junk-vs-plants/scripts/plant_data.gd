@@ -36,7 +36,7 @@ const TYPES := [
 	},
 	{
 		"name": "Pokrzywa", "recharge": 5.0, "cost": 60, "hp": 90, "role": "shooter",
-		"dmg": 12, "interval": 1.4, "pierce": true, "unlock_level": 16,
+		"dmg": 26, "interval": 1.2, "pierce": true, "unlock_level": 16,
 		"texture": "res://assets/sprites/plants/nettle.png",
 	},
 	{
