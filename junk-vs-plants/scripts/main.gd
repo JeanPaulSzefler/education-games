@@ -65,6 +65,22 @@ const TILE_ICON_SIZE := 64
 const TILE_BORDER_COLOR := Color(0.35, 0.3, 0.22)
 const TILE_SELECTED_BORDER_COLOR := Color(0.95, 0.85, 0.15)
 const TILE_UNAFFORDABLE_MODULATE := Color(0.45, 0.45, 0.45)
+# Kafelek wybranej rosliny: jasniejsze tlo, grubsza ramka i wysuniecie w prawo.
+const TILE_BG_COLOR := Color(0.16, 0.22, 0.14)
+const TILE_SELECTED_BG_COLOR := Color(0.42, 0.38, 0.1)
+const TILE_BORDER_WIDTH := 4
+const TILE_SELECTED_BORDER_WIDTH := 7
+const TILE_SELECTED_SHIFT := 10.0
+# Roslina, na ktora nie stac gracza kroplami wody - czerwony odcien i ramka.
+const TILE_NO_WATER_MODULATE := Color(1.0, 0.55, 0.55)
+const TILE_NO_WATER_BORDER_COLOR := Color(0.85, 0.15, 0.15)
+# Cien odnawiania (jak w PvZ): ciemna nakladka, ktora kurczy sie od dolu do
+# gory w miare uplywu czasu odnowienia.
+const TILE_COOLDOWN_SHADE := Color(0, 0, 0, 0.6)
+
+# --- Przycisk usuwania roslin ("X") pod prawym dolnym rogiem planszy ---
+const REMOVE_BTN_SIZE := 64.0
+const REMOVE_ACTIVE_BG_COLOR := Color(0.6, 0.12, 0.12)
 
 const START_WATER := 100
 
@@ -81,6 +97,13 @@ var boss_spawned := false
 var water := START_WATER
 var fertilizer := 0
 var fertilizer_mode := false
+# Tryb usuwania: tapniecie "X", potem tapniecie rosliny - roslina znika bez
+# zwrotu kropel wody.
+var remove_mode := false
+var remove_button: Button
+var remove_border_sb: StyleBoxFlat
+# plant_idx -> pozostaly czas odnowienia (s); brak wpisu = roslina gotowa.
+var plant_cooldowns := {}
 
 var grid_occupancy := []
 var blocked_cells := {}
@@ -94,7 +117,8 @@ var game_over := false
 var water_count_label: Label
 var wave_label: Label
 var message_label: Label
-# {"plant_idx", "button", "border_sb"} - jeden wpis na kafelek rosliny w pasku
+# {"plant_idx", "button", "border_sb", "base_y", "cooldown_shade"} - jeden wpis
+# na kafelek rosliny w pasku
 var plant_tiles := []
 # {"button", "border_sb", "count_label"} - kafelek nawozu (ten sam styl co rosliny)
 var fertilizer_tile: Dictionary
@@ -120,6 +144,7 @@ func _ready() -> void:
 	_build_water_counter()
 	_build_plant_bar()
 	_build_fertilizer_tile()
+	_build_remove_button()
 	_update_hud()
 
 func _current_level() -> Dictionary:
@@ -237,16 +262,10 @@ func _build_tile(y: float, icon_texture: String) -> Dictionary:
 	btn.focus_mode = Control.FOCUS_NONE
 
 	var border_sb := StyleBoxFlat.new()
-	border_sb.bg_color = Color(0.16, 0.22, 0.14)
-	border_sb.border_width_left = 4
-	border_sb.border_width_right = 4
-	border_sb.border_width_top = 4
-	border_sb.border_width_bottom = 4
+	border_sb.bg_color = TILE_BG_COLOR
+	border_sb.set_border_width_all(TILE_BORDER_WIDTH)
 	border_sb.border_color = TILE_BORDER_COLOR
-	border_sb.corner_radius_top_left = 10
-	border_sb.corner_radius_top_right = 10
-	border_sb.corner_radius_bottom_left = 10
-	border_sb.corner_radius_bottom_right = 10
+	border_sb.set_corner_radius_all(10)
 	for state in ["normal", "hover", "pressed"]:
 		btn.add_theme_stylebox_override(state, border_sb)
 	add_child(btn)
@@ -255,7 +274,16 @@ func _build_tile(y: float, icon_texture: String) -> Dictionary:
 	icon.position = Vector2(10, (TILE_HEIGHT - TILE_ICON_SIZE) / 2.0)
 	btn.add_child(icon)
 
-	return {"button": btn, "border_sb": border_sb}
+	return {"button": btn, "border_sb": border_sb, "base_y": y}
+
+# Podswietlenie wybranego kafelka: jasniejsze tlo, grubsza ramka i wysuniecie
+# w prawo, zeby od razu bylo widac, co zostanie posadzone/uzyte.
+func _set_tile_selected(tile: Dictionary, selected: bool, border_color: Color) -> void:
+	var sb: StyleBoxFlat = tile["border_sb"]
+	sb.bg_color = TILE_SELECTED_BG_COLOR if selected else TILE_BG_COLOR
+	sb.set_border_width_all(TILE_SELECTED_BORDER_WIDTH if selected else TILE_BORDER_WIDTH)
+	sb.border_color = TILE_SELECTED_BORDER_COLOR if selected else border_color
+	tile["button"].position.x = SIDEBAR_X + (TILE_SELECTED_SHIFT if selected else 0.0)
 
 func _build_plant_bar() -> void:
 	var tiles_top := _sidebar_tiles_top()
@@ -287,6 +315,14 @@ func _build_plant_bar() -> void:
 		cost_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		tile["button"].add_child(cost_label)
 
+		# Cien odnawiania - na starcie ukryty (wysokosc 0), patrz _update_cooldowns().
+		var shade := ColorRect.new()
+		shade.color = TILE_COOLDOWN_SHADE
+		shade.size = Vector2(TILE_WIDTH, 0)
+		shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		tile["button"].add_child(shade)
+		tile["cooldown_shade"] = shade
+
 		tile["button"].pressed.connect(_on_plant_button_pressed.bind(plant_idx))
 		plant_tiles.append(tile)
 
@@ -305,11 +341,42 @@ func _build_fertilizer_tile() -> void:
 
 	fertilizer_tile["button"].pressed.connect(_on_fertilizer_button_pressed)
 
+# Przycisk "X" pod prawym dolnym rogiem planszy - wlacza/wylacza tryb usuwania.
+func _build_remove_button() -> void:
+	remove_button = Button.new()
+	remove_button.text = "X"
+	remove_button.add_theme_font_size_override("font_size", 36)
+	remove_button.add_theme_color_override("font_color", Color(0.95, 0.35, 0.3))
+	remove_button.add_theme_color_override("font_hover_color", Color(0.95, 0.35, 0.3))
+	remove_button.add_theme_color_override("font_pressed_color", Color(0.95, 0.35, 0.3))
+	remove_button.position = Vector2(GRID_LEFT + COLS * CELL - REMOVE_BTN_SIZE, GRID_TOP + ROWS * CELL + 8)
+	remove_button.size = Vector2(REMOVE_BTN_SIZE, REMOVE_BTN_SIZE)
+	remove_button.focus_mode = Control.FOCUS_NONE
+
+	remove_border_sb = StyleBoxFlat.new()
+	remove_border_sb.bg_color = TILE_BG_COLOR
+	remove_border_sb.set_border_width_all(TILE_BORDER_WIDTH)
+	remove_border_sb.border_color = TILE_BORDER_COLOR
+	remove_border_sb.set_corner_radius_all(10)
+	for state in ["normal", "hover", "pressed"]:
+		remove_button.add_theme_stylebox_override(state, remove_border_sb)
+	remove_button.pressed.connect(_on_remove_button_pressed)
+	add_child(remove_button)
+
 func _on_plant_button_pressed(idx: int) -> void:
 	if game_over:
 		return
-	selected_plant_type = idx
+	if plant_cooldowns.has(idx):
+		message_label.text = "Ta roslina jeszcze odrasta - poczekaj chwile"
+		return
+	if water < PLANT_TYPES[idx]["cost"]:
+		message_label.text = "Za malo kropel wody"
+		return
+	# Ponowne tapniecie wybranej rosliny odznacza ja.
+	selected_plant_type = -1 if selected_plant_type == idx else idx
 	fertilizer_mode = false
+	remove_mode = false
+	message_label.text = ""
 	_update_hud()
 
 func _on_fertilizer_button_pressed() -> void:
@@ -317,12 +384,25 @@ func _on_fertilizer_button_pressed() -> void:
 		return
 	fertilizer_mode = true
 	selected_plant_type = -1
+	remove_mode = false
+	_update_hud()
+
+func _on_remove_button_pressed() -> void:
+	if game_over:
+		return
+	remove_mode = not remove_mode
+	selected_plant_type = -1
+	fertilizer_mode = false
+	message_label.text = ""
 	_update_hud()
 
 func _on_tile_gui_input(event: InputEvent, col: int, row: int) -> void:
 	if game_over:
 		return
 	if not _is_tap_press(event):
+		return
+	if remove_mode:
+		_try_remove_plant(col, row)
 		return
 	if fertilizer_mode:
 		_try_apply_fertilizer(col, row)
@@ -351,6 +431,7 @@ func _try_place_plant(col: int, row: int) -> void:
 		message_label.text = "Za malo kropel wody"
 		return
 	water -= pt["cost"]
+	plant_cooldowns[selected_plant_type] = pt["recharge"]
 	var node := _make_sprite(pt["texture"], CELL - 16)
 	node.position = Vector2(GRID_LEFT + col * CELL + 8, GRID_TOP + row * CELL + 8)
 	add_child(node)
@@ -393,21 +474,39 @@ func _try_apply_fertilizer(col: int, row: int) -> void:
 	message_label.text = ""
 	_update_hud()
 
+# Usuniecie wlasnej rosliny: znika bez zwrotu kropel wody i bez nawozu.
+func _try_remove_plant(col: int, row: int) -> void:
+	var plant = grid_occupancy[col][row]
+	if plant == null:
+		message_label.text = "Brak rosliny na tym polu"
+		return
+	_remove_plant(plant, false)
+	remove_mode = false
+	message_label.text = ""
+	_update_hud()
+
 func _update_hud() -> void:
 	water_count_label.text = str(water)
 
 	for tile in plant_tiles:
 		var pt = PLANT_TYPES[tile["plant_idx"]]
 		var affordable: bool = water >= pt["cost"]
-		tile["button"].modulate = Color(1, 1, 1) if affordable else TILE_UNAFFORDABLE_MODULATE
+		tile["button"].modulate = Color(1, 1, 1) if affordable else TILE_NO_WATER_MODULATE
 		var is_selected: bool = selected_plant_type == tile["plant_idx"]
-		tile["border_sb"].border_color = TILE_SELECTED_BORDER_COLOR if is_selected else TILE_BORDER_COLOR
+		_set_tile_selected(tile, is_selected, TILE_BORDER_COLOR if affordable else TILE_NO_WATER_BORDER_COLOR)
 
 	fertilizer_tile["count_label"].text = str(fertilizer)
 	fertilizer_tile["button"].modulate = Color(1, 1, 1) if fertilizer > 0 else TILE_UNAFFORDABLE_MODULATE
-	fertilizer_tile["border_sb"].border_color = TILE_SELECTED_BORDER_COLOR if fertilizer_mode else TILE_BORDER_COLOR
+	_set_tile_selected(fertilizer_tile, fertilizer_mode, TILE_BORDER_COLOR)
 
-	if fertilizer_mode:
+	remove_border_sb.bg_color = REMOVE_ACTIVE_BG_COLOR if remove_mode else TILE_BG_COLOR
+	remove_border_sb.set_border_width_all(TILE_SELECTED_BORDER_WIDTH if remove_mode else TILE_BORDER_WIDTH)
+	remove_border_sb.border_color = TILE_SELECTED_BORDER_COLOR if remove_mode else TILE_BORDER_COLOR
+	remove_button.add_theme_color_override("font_color", Color(1, 1, 1) if remove_mode else Color(0.95, 0.35, 0.3))
+
+	if remove_mode:
+		wave_label.text = "Tryb usuwania: tapnij rosline, ktora chcesz usunac (woda nie wraca)"
+	elif fertilizer_mode:
 		wave_label.text = "Tryb nawozu: tapnij wlasna rosline, by ja wzmocnic"
 	elif selected_plant_type >= 0:
 		wave_label.text = "Wybrano: %s (tapnij pole ogrodu)" % PLANT_TYPES[selected_plant_type]["name"]
@@ -418,6 +517,7 @@ func _process(delta: float) -> void:
 	if game_over:
 		return
 
+	_update_cooldowns(delta)
 	_update_wave_spawning(delta)
 	_update_plants(delta)
 	_update_projectiles(delta)
@@ -429,6 +529,20 @@ func _process(delta: float) -> void:
 	_update_fertilizer_drops(delta)
 	_update_health_bars(delta)
 	_check_win_condition()
+
+# --- Odnawianie roslin w pasku (jak w PvZ): cien zakrywa kafelek i kurczy
+# sie ku gorze, az roslina znow bedzie gotowa do posadzenia. ---
+func _update_cooldowns(delta: float) -> void:
+	for idx in plant_cooldowns.keys():
+		plant_cooldowns[idx] -= delta
+		if plant_cooldowns[idx] <= 0.0:
+			plant_cooldowns.erase(idx)
+	for tile in plant_tiles:
+		var idx: int = tile["plant_idx"]
+		var ratio := 0.0
+		if plant_cooldowns.has(idx):
+			ratio = plant_cooldowns[idx] / PLANT_TYPES[idx]["recharge"]
+		tile["cooldown_shade"].size.y = TILE_HEIGHT * ratio
 
 # --- Fale ---
 func _update_wave_spawning(delta: float) -> void:

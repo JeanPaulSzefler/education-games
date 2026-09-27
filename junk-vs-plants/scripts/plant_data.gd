@@ -11,46 +11,51 @@ extends RefCounted
 #       "gust"      jednorazowa: gdy JAKIKOLWIEK szkodnik pojawi sie w jej rzedzie
 #                   (nie trzeba czekac, az ja dotknie), rani i odrzuca caly rzad, po czym znika
 #
+# recharge: czas odnowienia w sekundach (jak w Plants vs Zombies) - po
+# posadzeniu rosliny jej kafelek w pasku jest zacieniony i nie da sie jej
+# wybrac, dopoki licznik nie dobiegnie konca. Na starcie poziomu wszystkie
+# rosliny sa gotowe. Mrozoroslinka jest tania, wiec odnawia sie najdluzej.
+#
 # unlock_level: numer poziomu (od 1), na ktorym roslina jest juz dostepna do
 # wyboru w taliii - odblokowuje sie na stale po ukonczeniu poziomu (unlock_level - 1).
 const TYPES := [
 	{
-		"name": "Kukurydza", "cost": 50, "hp": 100, "role": "shooter",
+		"name": "Kukurydza", "recharge": 5.0, "cost": 50, "hp": 100, "role": "shooter",
 		"dmg": 20, "interval": 1.2, "unlock_level": 1,
 		"texture": "res://assets/sprites/plants/corn.png",
 	},
 	{
-		"name": "Kaktus", "cost": 25, "hp": 80, "role": "generator",
+		"name": "Kaktus", "recharge": 5.0, "cost": 25, "hp": 80, "role": "generator",
 		"water_interval": 9.0, "water_value": 20, "unlock_level": 1,
 		"texture": "res://assets/sprites/plants/cactus.png",
 	},
 	{
-		"name": "Lisc Bananowca", "cost": 50, "hp": 400, "role": "wall",
+		"name": "Lisc Bananowca", "recharge": 12.0, "cost": 50, "hp": 400, "role": "wall",
 		"unlock_level": 3,
 		"texture": "res://assets/sprites/plants/banana_leaf.png",
 	},
 	{
-		"name": "Pokrzywa", "cost": 60, "hp": 90, "role": "shooter",
+		"name": "Pokrzywa", "recharge": 5.0, "cost": 60, "hp": 90, "role": "shooter",
 		"dmg": 12, "interval": 1.4, "pierce": true, "unlock_level": 16,
 		"texture": "res://assets/sprites/plants/nettle.png",
 	},
 	{
-		"name": "Bitny Brokul", "cost": 60, "hp": 220, "role": "melee",
+		"name": "Bitny Brokul", "recharge": 8.0, "cost": 60, "hp": 220, "role": "melee",
 		"counter_dmg": 30, "unlock_level": 12,
 		"texture": "res://assets/sprites/plants/broccoli.png",
 	},
 	{
-		"name": "Mrozoroslinka", "cost": 40, "hp": 40, "role": "freeze",
+		"name": "Mrozoroslinka", "recharge": 20.0, "cost": 10, "hp": 40, "role": "freeze",
 		"slow_factor": 0.0, "slow_duration": 5.0, "unlock_level": 5,
 		"texture": "res://assets/sprites/plants/frost.png",
 	},
 	{
-		"name": "Bumorzech", "cost": 90, "hp": 40, "role": "bomb",
+		"name": "Bumorzech", "recharge": 15.0, "cost": 90, "hp": 40, "role": "bomb",
 		"fuse_time": 1.5, "blast_dmg": 300, "blast_radius_cells": 1, "unlock_level": 9,
 		"texture": "res://assets/sprites/plants/bomb_nut.png",
 	},
 	{
-		"name": "Wichurowy", "cost": 60, "hp": 40, "role": "gust",
+		"name": "Wichurowy", "recharge": 12.0, "cost": 60, "hp": 40, "role": "gust",
 		"gust_dmg": 220, "knockback": 130.0, "unlock_level": 7,
 		"texture": "res://assets/sprites/plants/gust_leaf.png",
 	},
