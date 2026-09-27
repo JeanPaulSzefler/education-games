@@ -29,6 +29,26 @@ const THORN_TEXTURE := "res://assets/sprites/ui/thorn.png"
 const WATER_DROP_TEXTURE := "res://assets/sprites/ui/water_drop.png"
 const FERTILIZER_TEXTURE := "res://assets/sprites/ui/fertilizer.png"
 const BOOST_RING_TEXTURE := "res://assets/sprites/ui/boost_ring.png"
+const JUNK_PILE_TEXTURE := "res://assets/sprites/ui/junk_pile.png"
+
+# --- Kupki smieci: pojawiaja sie w prawej polowie planszy (patrz
+# "junk_pile_waves" w level_data.gd), na starcie kazdej fali wypuszczaja
+# jednego slabego wroga. Rosliny moga je zestrzelic (pociski, wybuch), a
+# Pnacza posadzone na kupce niszcza ja od razu. Na kupce nie da sie sadzic
+# innych roslin; szkodniki przechodza po niej bez przeszkod. ---
+const JUNK_PILE_HP := 250
+const JUNK_PILE_MIN_COL := 5
+const ENDLESS_FIRST_PILE_WAVE := 2   # tryb nieskonczony: kupka od 3. fali...
+const ENDLESS_PILE_EVERY := 3        # ...i potem co tyle fal
+
+# Roza: pocisk naprowadzany na cel w dowolnym rzedzie.
+const HOMING_SPEED := 320.0
+const HOMING_HIT_RADIUS := 30.0
+const PROJECTILE_SPEED := 300.0
+const AIMED_PROJECTILE_COLOR := Color(1.0, 0.45, 0.6)
+const VOLLEY_PROJECTILE_COLOR := Color(0.65, 0.35, 0.9)
+const BURN_COLOR := Color(1.0, 0.6, 0.35)
+const FROZEN_COLOR := Color(0.6, 0.85, 1.0)
 
 const HEALTH_BAR_HIDE_DELAY := 2.0
 const HEALTH_BAR_HEIGHT := 6
@@ -137,6 +157,9 @@ var blocked_cells := {}
 var plants := []
 var enemies := []
 var projectiles := []
+var homing_projectiles := []
+# _cell_key(col, row) -> {"node", "hp", "max_hp", "col", "row", "bar", "hurt_timer"}
+var junk_piles := {}
 var water_drops := []
 var fertilizer_drops := []
 var selected_plant_type := -1
@@ -297,7 +320,8 @@ func _build_tile(y: float, icon_texture: String) -> Dictionary:
 	var btn := Button.new()
 	btn.position = Vector2(SIDEBAR_X, y)
 	btn.size = Vector2(TILE_WIDTH, TILE_HEIGHT)
-	btn.flat = true
+	# flat = false: przycisk "flat" w ogole nie rysuje StyleBoxa (tla i ramki).
+	btn.flat = false
 	btn.focus_mode = Control.FOCUS_NONE
 
 	var border_sb := StyleBoxFlat.new()
@@ -462,15 +486,29 @@ func _try_place_plant(col: int, row: int) -> void:
 	if blocked_cells.has(_cell_key(col, row)):
 		message_label.text = "Na tym polu nie mozna sadzic"
 		return
+	var pt = PLANT_TYPES[selected_plant_type]
+	var pile = junk_piles.get(_cell_key(col, row))
+	if pt["role"] == "vines":
+		if pile == null:
+			message_label.text = "Pnacza sadzi sie tylko na kupkach smieci"
+			return
+	elif pile != null:
+		message_label.text = "Tu lezy kupka smieci - zestrzel ja albo posadz na niej Pnacza"
+		return
 	if grid_occupancy[col][row] != null:
 		message_label.text = "To pole jest zajete"
 		return
-	var pt = PLANT_TYPES[selected_plant_type]
 	if water < pt["cost"]:
 		message_label.text = "Za malo kropel wody"
 		return
 	water -= pt["cost"]
 	plant_cooldowns[selected_plant_type] = pt["recharge"]
+	if pt["role"] == "vines":
+		_vines_destroy_pile(pile, pt["texture"])
+		message_label.text = ""
+		selected_plant_type = -1
+		_update_hud()
+		return
 	var node := _make_sprite(pt["texture"], CELL - 16)
 	node.position = Vector2(GRID_LEFT + col * CELL + 8, GRID_TOP + row * CELL + 8)
 	add_child(node)
@@ -567,6 +605,7 @@ func _process(delta: float) -> void:
 	_update_wave_spawning(delta)
 	_update_plants(delta)
 	_update_projectiles(delta)
+	_update_homing_projectiles(delta)
 	_update_enemies(delta)
 	_update_boss_specials(delta)
 	_update_boss_bar()
@@ -604,6 +643,9 @@ func _update_wave_spawning(delta: float) -> void:
 				wave_spawn_queue = waves[current_wave].duplicate()
 				if not endless and current_wave >= 2:
 					_add_extra_enemies(wave_spawn_queue)
+				if _pile_appears_on_wave(current_wave):
+					_spawn_junk_pile()
+				_add_pile_enemies(wave_spawn_queue)
 				time_to_next_spawn = 0.0
 				message_label.text = "Fala %d nadchodzi!" % (current_wave + 1)
 			return
@@ -611,12 +653,20 @@ func _update_wave_spawning(delta: float) -> void:
 		time_to_next_spawn -= delta
 		if time_to_next_spawn <= 0.0 and wave_spawn_queue.size() > 0:
 			var spawn_info = wave_spawn_queue.pop_front()
+			time_to_next_spawn = _spawn_interval()
 			if spawn_info.has("boss"):
 				message_label.text = "%s nadchodzi!" % BOSS_TYPES[spawn_info["boss"]]["name"]
 				_spawn_boss(spawn_info["boss"], spawn_info["row"])
+			elif spawn_info.has("pile"):
+				# Kupka zniszczona, zanim wrog zdazyl wyjsc - nic nie wychodzi.
+				var pile: Dictionary = spawn_info["pile"]
+				if junk_piles.get(_cell_key(pile["col"], pile["row"])) == pile:
+					_spawn_enemy(spawn_info["type"], pile["row"], _pile_x(pile))
+					_animate_pile_release(pile)
+				else:
+					time_to_next_spawn = 0.0
 			else:
 				_spawn_enemy(spawn_info["type"], spawn_info["row"])
-			time_to_next_spawn = _spawn_interval()
 
 		if wave_spawn_queue.is_empty() and enemies.is_empty() and wave_in_progress:
 			wave_in_progress = false
@@ -696,10 +746,94 @@ func _generate_endless_wave(n: int) -> Array:
 			wave.append({"boss": randi() % BOSS_TYPES.size(), "row": randi_range(0, ROWS - 1)})
 	return wave
 
-func _spawn_enemy(type_idx: int, row: int) -> void:
+# --- Kupki smieci ---
+func _pile_appears_on_wave(wave_idx: int) -> bool:
+	if endless:
+		return wave_idx >= ENDLESS_FIRST_PILE_WAVE and (wave_idx - ENDLESS_FIRST_PILE_WAVE) % ENDLESS_PILE_EVERY == 0
+	return _current_level().get("junk_pile_waves", []).has(wave_idx)
+
+func _pile_x(pile: Dictionary) -> float:
+	return float(GRID_LEFT + pile["col"] * CELL + 8)
+
+# Nowa kupka na losowym wolnym polu w prawej czesci planszy (bez rosliny,
+# bez innej kupki, nie na polu zablokowanym). Brak miejsca = brak kupki.
+func _spawn_junk_pile() -> void:
+	var free := []
+	for c in range(JUNK_PILE_MIN_COL, COLS):
+		for r in range(ROWS):
+			var key := _cell_key(c, r)
+			if grid_occupancy[c][r] == null and not blocked_cells.has(key) and not junk_piles.has(key):
+				free.append(Vector2i(c, r))
+	if free.is_empty():
+		return
+	var cell: Vector2i = free[randi() % free.size()]
+	var node := _make_sprite(JUNK_PILE_TEXTURE, CELL - 16)
+	node.position = Vector2(GRID_LEFT + cell.x * CELL + 8, GRID_TOP + cell.y * CELL + 8)
+	node.scale = Vector2(0.2, 0.2)
+	add_child(node)
+	var tw := node.create_tween()
+	tw.tween_property(node, "scale", Vector2(1, 1), 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	var bar := _add_health_bar(node, CELL - 16)
+	junk_piles[_cell_key(cell.x, cell.y)] = {
+		"node": node, "hp": JUNK_PILE_HP, "max_hp": JUNK_PILE_HP,
+		"col": cell.x, "row": cell.y, "bar": bar, "hurt_timer": HEALTH_BAR_HIDE_DELAY + 1.0,
+	}
+	message_label.text = "Pojawila sie kupka smieci! Wychodza z niej szkodniki."
+
+# Kazda kupka wypuszcza na fale jednego slabego wroga (Butelke albo Puszke),
+# wstawionego w losowe miejsce kolejki.
+func _add_pile_enemies(queue: Array) -> void:
+	for pile in junk_piles.values():
+		var entry := {"type": randi() % 2, "row": pile["row"], "pile": pile}
+		queue.insert(randi_range(0, queue.size()), entry)
+
+func _animate_pile_release(pile: Dictionary) -> void:
+	var node: Control = pile["node"]
+	var tw := node.create_tween()
+	tw.tween_property(node, "scale", Vector2(1.15, 0.85), 0.1)
+	tw.tween_property(node, "scale", Vector2(1, 1), 0.15)
+
+func _damage_pile(pile: Dictionary, dmg: float) -> void:
+	pile["hp"] -= dmg
+	_flash_health_bar(pile)
+	if pile["hp"] <= 0:
+		_remove_pile(pile)
+
+# Kupka znika (kurczy sie i zanika) - od razu przestaje istniec w grze.
+func _remove_pile(pile: Dictionary) -> void:
+	var key := _cell_key(pile["col"], pile["row"])
+	if junk_piles.get(key) != pile:
+		return
+	junk_piles.erase(key)
+	var node: Control = pile["node"]
+	var tw := node.create_tween()
+	tw.tween_property(node, "scale", Vector2(0.1, 0.1), 0.4).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
+	tw.parallel().tween_property(node, "modulate:a", 0.0, 0.4)
+	tw.tween_callback(node.queue_free)
+
+# Pnacza: wyrastaja na kupce, oplataja ja (kupka znika), po czym same znikaja.
+func _vines_destroy_pile(pile: Dictionary, vines_texture: String) -> void:
+	var vines := _make_sprite(vines_texture, CELL - 16)
+	vines.position = pile["node"].position
+	vines.scale = Vector2(0.3, 0.3)
+	add_child(vines)
+	_remove_pile(pile)
+	var tw := vines.create_tween()
+	tw.tween_property(vines, "scale", Vector2(1.1, 1.1), 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_interval(0.3)
+	tw.tween_property(vines, "modulate:a", 0.0, 0.3)
+	tw.tween_callback(vines.queue_free)
+
+func _pile_in_row_between(row: int, from_x: float, to_x: float) -> Variant:
+	for pile in junk_piles.values():
+		if pile["row"] == row and _pile_x(pile) >= from_x and _pile_x(pile) <= to_x:
+			return pile
+	return null
+
+func _spawn_enemy(type_idx: int, row: int, start_x: float = -1.0) -> void:
 	var et = ENEMY_TYPES[type_idx]
 	var node := _make_sprite(et["texture"], CELL - 16)
-	var x := float(GRID_LEFT + COLS * CELL)
+	var x := start_x if start_x >= 0.0 else float(GRID_LEFT + COLS * CELL)
 	node.position = Vector2(x, GRID_TOP + row * CELL + 8)
 	add_child(node)
 	var bar := _add_health_bar(node, CELL - 16)
@@ -708,7 +842,7 @@ func _spawn_enemy(type_idx: int, row: int) -> void:
 		"node": node, "hp": hp, "max_hp": hp, "row": row, "x": x, "type_idx": type_idx,
 		"speed": et["speed"] * _enemy_speed_multiplier(), "bite_dmg": et["bite_dmg"], "bite_interval": et["bite_interval"],
 		"bite_timer": 0.0, "bar": bar, "hurt_timer": HEALTH_BAR_HIDE_DELAY + 1.0,
-		"slow_timer": 0.0, "slow_factor": 1.0, "is_boss": false,
+		"slow_timer": 0.0, "slow_factor": 1.0, "burn_timer": 0.0, "burn_dps": 0.0, "flames": null, "is_boss": false,
 		"water_thief": et.get("water_thief", false), "steal_target": null,
 		# Chodzenie/jedzenie (runda C): base_y do animacji podskakiwania,
 		# faza losowa zeby wrogowie nie kolysali sie w idealnym takcie.
@@ -727,7 +861,7 @@ func _spawn_boss(boss_idx: int, row: int) -> void:
 		"node": node, "hp": hp, "max_hp": hp, "row": row, "x": x, "type_idx": -1,
 		"speed": bt["speed"] * _enemy_speed_multiplier(), "bite_dmg": bt["bite_dmg"], "bite_interval": bt["bite_interval"],
 		"bite_timer": 0.0, "bar": bar, "hurt_timer": HEALTH_BAR_HIDE_DELAY + 1.0,
-		"slow_timer": 0.0, "slow_factor": 1.0,
+		"slow_timer": 0.0, "slow_factor": 1.0, "burn_timer": 0.0, "burn_dps": 0.0, "flames": null,
 		"is_boss": true, "boss_type_idx": boss_idx,
 		"special_timer": bt["special_interval"], "telegraphing": false,
 		"base_y": node.position.y, "phase": randf_range(0.0, TAU), "anim_t": 0.0,
@@ -760,9 +894,38 @@ func _update_plants(delta: float) -> void:
 					plant["atk_timer"] -= delta * boost
 					if plant["atk_timer"] <= 0.0:
 						var target := _find_enemy_in_row(plant["row"])
-						if not target.is_empty():
+						if not target.is_empty() or _pile_in_row_between(plant["row"], plant["base_pos"].x, INF) != null:
 							plant["atk_timer"] = pt["interval"]
-							_animate_shooter_shot(plant, pt["dmg"] * boost, pt.get("pierce", false))
+							var row: int = plant["row"]
+							var muzzle_x: float = plant["base_pos"].x + CELL
+							var dmg: float = pt["dmg"] * boost
+							var pierce: bool = pt.get("pierce", false)
+							_animate_shooter_shot(plant, func(): _spawn_projectile(row, muzzle_x, dmg, pierce))
+			"volley":
+				# Aronia: krotki zasieg (range_cells pol przed nia), salwa kilku
+				# pociskow naraz - od gory do dolu pola.
+				if plant["disable_timer"] <= 0.0:
+					plant["atk_timer"] -= delta * boost
+					if plant["atk_timer"] <= 0.0:
+						var from_x: float = plant["base_pos"].x
+						var max_x: float = from_x + CELL * (pt["range_cells"] + 1)
+						if not _find_enemy_in_row_between(plant["row"], from_x, max_x).is_empty() or _pile_in_row_between(plant["row"], from_x, max_x) != null:
+							plant["atk_timer"] = pt["interval"]
+							var vrow: int = plant["row"]
+							var vdmg: float = pt["dmg"] * boost
+							var count: int = pt["volley_count"]
+							_animate_shooter_shot(plant, func(): _spawn_volley(vrow, from_x + CELL, vdmg, count, max_x))
+			"aimed":
+				# Roza: celuje w szkodnika najblizszego domu, w dowolnym rzedzie.
+				if plant["disable_timer"] <= 0.0:
+					plant["atk_timer"] -= delta * boost
+					if plant["atk_timer"] <= 0.0:
+						var aim_target := _find_enemy_closest_to_house()
+						if not aim_target.is_empty():
+							plant["atk_timer"] = pt["interval"]
+							var origin: Vector2 = plant["base_pos"] + Vector2(CELL - 16, (CELL - 16) * 0.3)
+							var admg: float = pt["dmg"] * boost
+							_animate_shooter_shot(plant, func(): _spawn_homing_projectile(origin, aim_target, admg))
 			"generator":
 				plant["gen_timer"] -= delta
 				if plant["gen_timer"] <= 0.0:
@@ -791,14 +954,13 @@ func _update_plants(delta: float) -> void:
 	for plant in dead:
 		_remove_plant(plant)
 
-# Widoczne wyrzucenie pocisku (Kukurydza, Pokrzywa): nabiera (odchylenie w
-# lewo + skala 0.9 w poziomie), wyrzut (do przodu + skala 1.1, w tej chwili
-# rodzi sie pocisk z bazowej pozycji rosliny - przesuniecie jest tylko
-# wizualne, trafienia licza sie jak dotad), powrot do pozycji bazowej.
-func _animate_shooter_shot(plant: Dictionary, dmg: float, pierce: bool) -> void:
+# Widoczne wyrzucenie pocisku (Kukurydza, Pokrzywa, Aronia, Roza): nabiera
+# (odchylenie w lewo + skala 0.9 w poziomie), wyrzut (do przodu + skala 1.1,
+# w tej chwili wywolywane jest "fire", ktore tworzy pocisk(i) z bazowej
+# pozycji rosliny - przesuniecie jest tylko wizualne), powrot do pozycji bazowej.
+func _animate_shooter_shot(plant: Dictionary, fire: Callable) -> void:
 	var node = plant["node"]
 	var base_pos: Vector2 = plant["base_pos"]
-	var row: int = plant["row"]
 	var running_tween = plant.get("anim_tween")
 	if running_tween != null and is_instance_valid(running_tween):
 		running_tween.kill()
@@ -809,7 +971,7 @@ func _animate_shooter_shot(plant: Dictionary, dmg: float, pierce: bool) -> void:
 	plant["anim_tween"] = tw
 	tw.tween_property(node, "position", base_pos + Vector2(-6, 0), 0.08)
 	tw.parallel().tween_property(node, "scale:x", 0.9, 0.08)
-	tw.tween_callback(func(): _spawn_projectile(row, base_pos.x + CELL, dmg, pierce))
+	tw.tween_callback(fire)
 	tw.tween_property(node, "position", base_pos + Vector2(8, 0), 0.08)
 	tw.parallel().tween_property(node, "scale:x", 1.1, 0.08)
 	tw.tween_property(node, "position", base_pos, 0.1)
@@ -818,6 +980,12 @@ func _animate_shooter_shot(plant: Dictionary, dmg: float, pierce: bool) -> void:
 func _find_enemy_in_row(row: int) -> Dictionary:
 	for e in enemies:
 		if e["row"] == row:
+			return e
+	return {}
+
+func _find_enemy_in_row_between(row: int, from_x: float, to_x: float) -> Dictionary:
+	for e in enemies:
+		if e["row"] == row and e["x"] >= from_x - CELL / 2.0 and e["x"] <= to_x:
 			return e
 	return {}
 
@@ -832,22 +1000,40 @@ func _find_fully_entered_enemy_in_row(row: int) -> Dictionary:
 			return e
 	return {}
 
-func _spawn_projectile(row: int, x: float, dmg: float, pierce: bool = false) -> void:
+# Roza: szkodnik (juz caly na planszy) najblizej domu, w dowolnym rzedzie.
+func _find_enemy_closest_to_house() -> Dictionary:
+	var board_right := float(GRID_LEFT + COLS * CELL)
+	var best := {}
+	for e in enemies:
+		if e["x"] + e["node"].size.x > board_right:
+			continue
+		if best.is_empty() or e["x"] < best["x"]:
+			best = e
+	return best
+
+# y_frac: wysokosc pocisku w polu (0 = gora, 1 = dol) - czysto wizualne,
+# trafienia licza sie po x/rzedzie. max_x: pocisk znika po tej odleglosci
+# (Aronia strzela tylko na kilka pol).
+func _spawn_projectile(row: int, x: float, dmg: float, pierce: bool = false, y_frac: float = 0.4, max_x: float = INF, tint: Color = Color(1, 1, 1)) -> void:
 	var node := _make_sprite(THORN_TEXTURE, 16)
-	# "Pyszczek" rosliny: prawa krawedz sprite'a, ok. 40% wysokosci od gory
-	# (a nie srodek rzedu) - czysto wizualne, trafienia licza sie po x/rzedzie.
-	node.position = Vector2(x, GRID_TOP + row * CELL + 0.4 * (CELL - 16))
+	node.position = Vector2(x, GRID_TOP + row * CELL + y_frac * (CELL - 16))
 	node.scale = Vector2(0.4, 0.4)
+	node.modulate = tint
 	add_child(node)
 	var tw := node.create_tween()
 	tw.tween_property(node, "scale", Vector2(1, 1), 0.1)
-	projectiles.append({"node": node, "row": row, "x": x, "dmg": dmg, "pierce": pierce, "hit_enemies": []})
+	projectiles.append({"node": node, "row": row, "x": x, "dmg": dmg, "pierce": pierce, "hit_enemies": [], "max_x": max_x})
+
+# Aronia: kilka pociskow naraz, rozlozonych od gory do dolu pola.
+func _spawn_volley(row: int, x: float, dmg: float, count: int, max_x: float) -> void:
+	for i in range(count):
+		var y_frac: float = 0.05 + 0.9 * i / float(max(1, count - 1))
+		_spawn_projectile(row, x, dmg, false, y_frac, max_x, VOLLEY_PROJECTILE_COLOR)
 
 func _update_projectiles(delta: float) -> void:
-	var speed := 300.0
 	var to_remove := []
 	for proj in projectiles:
-		proj["x"] += speed * delta
+		proj["x"] += PROJECTILE_SPEED * delta
 		proj["node"].position.x = proj["x"]
 		for e in enemies:
 			if e["row"] == proj["row"] and abs(e["x"] - proj["x"]) < CELL / 2 and not proj["hit_enemies"].has(e):
@@ -857,17 +1043,61 @@ func _update_projectiles(delta: float) -> void:
 				if not proj["pierce"]:
 					to_remove.append(proj)
 					break
-		if proj["x"] > GRID_LEFT + COLS * CELL and not to_remove.has(proj):
+		if not to_remove.has(proj):
+			for pile in junk_piles.values():
+				if pile["row"] == proj["row"] and abs(_pile_x(pile) - proj["x"]) < CELL / 2 and not proj["hit_enemies"].has(pile):
+					proj["hit_enemies"].append(pile)
+					_damage_pile(pile, proj["dmg"])
+					if not proj["pierce"]:
+						to_remove.append(proj)
+					break
+		if (proj["x"] > GRID_LEFT + COLS * CELL or proj["x"] > proj["max_x"]) and not to_remove.has(proj):
 			to_remove.append(proj)
 	for proj in to_remove:
 		proj["node"].queue_free()
 		projectiles.erase(proj)
+
+# --- Roza: pocisk leci za celem; jesli cel zginal wczesniej, leci dalej
+# prosto i trafia pierwszego napotkanego szkodnika. ---
+func _spawn_homing_projectile(origin: Vector2, target: Dictionary, dmg: float) -> void:
+	var node := _make_sprite(THORN_TEXTURE, 18)
+	node.position = origin
+	node.modulate = AIMED_PROJECTILE_COLOR
+	add_child(node)
+	var dir := (_enemy_center(target) - origin).normalized() if enemies.has(target) else Vector2.RIGHT
+	homing_projectiles.append({"node": node, "pos": origin, "dir": dir, "target": target, "dmg": dmg})
+
+func _enemy_center(e: Dictionary) -> Vector2:
+	return e["node"].position + e["node"].size / 2.0
+
+func _update_homing_projectiles(delta: float) -> void:
+	var to_remove := []
+	for proj in homing_projectiles:
+		if enemies.has(proj["target"]):
+			proj["dir"] = (_enemy_center(proj["target"]) - proj["pos"] - Vector2(8, 8)).normalized()
+		proj["pos"] += proj["dir"] * HOMING_SPEED * delta
+		proj["node"].position = proj["pos"]
+		proj["node"].rotation = proj["dir"].angle()
+		var center: Vector2 = proj["pos"] + Vector2(8, 8)
+		for e in enemies:
+			if center.distance_to(_enemy_center(e)) < HOMING_HIT_RADIUS:
+				e["hp"] -= proj["dmg"]
+				_flash_health_bar(e)
+				to_remove.append(proj)
+				break
+		var p: Vector2 = proj["pos"]
+		if not to_remove.has(proj) and (p.x < GRID_LEFT - CELL or p.x > GRID_LEFT + COLS * CELL + CELL or p.y < GRID_TOP - CELL or p.y > GRID_TOP + ROWS * CELL):
+			to_remove.append(proj)
+	for proj in to_remove:
+		proj["node"].queue_free()
+		homing_projectiles.erase(proj)
 
 # --- Szkodniki: ruch i "zjadanie" roslin ---
 func _update_enemies(delta: float) -> void:
 	var dead := []
 	var reached_house := false
 	for e in enemies:
+		_update_burn(e, delta)
 		if e["hp"] <= 0:
 			dead.append(e)
 			continue
@@ -883,6 +1113,11 @@ func _update_enemies(delta: float) -> void:
 			if bpt["role"] == "freeze" and not blocking_plant["used"]:
 				blocking_plant["used"] = true
 				_trigger_freeze(blocking_plant, bpt, e)
+				e["bite_timer"] = 0.0
+				continue
+			if bpt["role"] == "burn" and not blocking_plant["used"]:
+				blocking_plant["used"] = true
+				_trigger_burn(blocking_plant, bpt, e)
 				e["bite_timer"] = 0.0
 				continue
 
@@ -925,7 +1160,7 @@ func _update_enemies(delta: float) -> void:
 		if e["slow_timer"] > 0.0:
 			e["slow_timer"] -= delta
 			if e["slow_timer"] <= 0.0:
-				e["node"].modulate = Color(1, 1, 1)
+				e["node"].modulate = _enemy_base_modulate(e)
 
 	for e in dead:
 		_kill_enemy(e)
@@ -933,6 +1168,33 @@ func _update_enemies(delta: float) -> void:
 	if reached_house:
 		_lose_game()
 
+# Kolor wroga poza efektami chwilowymi: zamrozony > plonacy > normalny.
+func _enemy_base_modulate(e: Dictionary) -> Color:
+	if e["slow_timer"] > 0.0:
+		return FROZEN_COLOR
+	if e["burn_timer"] > 0.0:
+		return BURN_COLOR
+	return Color(1, 1, 1)
+
+# Ognioroslinka: plonacy wrog traci HP rownomiernie przez caly czas palenia.
+func _update_burn(e: Dictionary, delta: float) -> void:
+	if e["burn_timer"] <= 0.0:
+		return
+	var tick: float = min(delta, e["burn_timer"])
+	e["burn_timer"] -= delta
+	e["hp"] -= e["burn_dps"] * tick
+	_flash_health_bar(e)
+	if e["burn_timer"] <= 0.0:
+		_stop_flames(e)
+		if not e.get("telegraphing", false):
+			e["node"].modulate = _enemy_base_modulate(e)
+
+func _stop_flames(e: Dictionary) -> void:
+	var flames = e["flames"]
+	e["flames"] = null
+	if flames != null and is_instance_valid(flames):
+		flames.emitting = false
+		get_tree().create_timer(0.6).timeout.connect(flames.queue_free)
 # Jedyne miejsce, w ktorym pokonany wrog znika z gry (strzaly, kontratak,
 # wybuch, wichura) - oddaje ewentualnie porwana krople i liczy pokonanych.
 func _kill_enemy(e: Dictionary) -> void:
@@ -1062,8 +1324,43 @@ func _trigger_freeze(plant: Dictionary, pt: Dictionary, target: Dictionary) -> v
 	# rozmrozenia - reszta rzedu porusza sie normalnie.
 	target["slow_timer"] = pt["slow_duration"]
 	target["slow_factor"] = pt["slow_factor"]
-	target["node"].modulate = Color(0.6, 0.85, 1.0)
+	target["node"].modulate = FROZEN_COLOR
 	_remove_plant(plant, false)
+
+# Ognioroslinka znika, a szkodnik, ktory na nia wszedl, staje w ogniu: przez
+# burn_duration s traci w sumie burn_dmg HP, ale moze isc dalej.
+func _trigger_burn(plant: Dictionary, pt: Dictionary, target: Dictionary) -> void:
+	target["burn_timer"] = pt["burn_duration"]
+	target["burn_dps"] = pt["burn_dmg"] / pt["burn_duration"]
+	if not target.get("telegraphing", false):
+		target["node"].modulate = _enemy_base_modulate(target)
+	if target["flames"] == null:
+		target["flames"] = _make_flames(target["node"])
+	_remove_plant(plant, false)
+
+# Plomienie: male pomaranczowo-zolte kwadraciki unoszace sie z wroga.
+func _make_flames(enemy_node: Control) -> CPUParticles2D:
+	var p := CPUParticles2D.new()
+	p.position = Vector2(enemy_node.size.x / 2.0, enemy_node.size.y * 0.7)
+	p.texture = _make_square_texture(6)
+	p.amount = 18
+	p.lifetime = 0.6
+	p.emission_shape = CPUParticles2D.EMISSION_SHAPE_RECTANGLE
+	p.emission_rect_extents = Vector2(enemy_node.size.x * 0.3, 6)
+	p.direction = Vector2(0, -1)
+	p.spread = 20.0
+	p.gravity = Vector2(0, -60)
+	p.initial_velocity_min = 20.0
+	p.initial_velocity_max = 50.0
+	p.scale_amount_min = 0.8
+	p.scale_amount_max = 1.6
+	var gradient := Gradient.new()
+	gradient.colors = PackedColorArray([Color(1.0, 0.9, 0.3), Color(1.0, 0.45, 0.1), Color(0.8, 0.2, 0.05, 0.0)])
+	gradient.offsets = PackedFloat32Array([0.0, 0.5, 1.0])
+	p.color_ramp = gradient
+	enemy_node.add_child(p)
+	p.emitting = true
+	return p
 
 func _trigger_gust(plant: Dictionary, pt: Dictionary) -> void:
 	_spawn_gust_cloud(plant)
@@ -1119,6 +1416,9 @@ func _trigger_bomb(plant: Dictionary, pt: Dictionary) -> void:
 				dead.append(e)
 	for e in dead:
 		_kill_enemy(e)
+	for pile in junk_piles.values():
+		if abs(pile["row"] - plant["row"]) <= radius_cells and abs(pile["col"] - plant["col"]) <= radius_cells:
+			_damage_pile(pile, pt["blast_dmg"])
 	_remove_plant(plant, false)
 
 # Wybuch Bumorzecha: pomaranczowe kolko rosnie do ok. 3 pol srednicy z
@@ -1181,7 +1481,7 @@ func _update_boss_specials(delta: float) -> void:
 		if e["special_timer"] <= 0.0:
 			_trigger_boss_special(e)
 			e["telegraphing"] = false
-			e["node"].modulate = Color(1, 1, 1)
+			e["node"].modulate = _enemy_base_modulate(e)
 			e["special_timer"] = BOSS_TYPES[e["boss_type_idx"]]["special_interval"]
 
 func _trigger_boss_special(e: Dictionary) -> void:
@@ -1424,7 +1724,7 @@ func _update_health_bars(delta: float) -> void:
 		if plant["hurt_timer"] > HEALTH_BAR_HIDE_DELAY:
 			plant["bar"]["bg"].visible = false
 			plant["bar"]["fg"].visible = false
-	for e in enemies:
+	for e in enemies + junk_piles.values():
 		e["hurt_timer"] += delta
 		if e["hurt_timer"] > HEALTH_BAR_HIDE_DELAY:
 			e["bar"]["bg"].visible = false

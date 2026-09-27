@@ -6,9 +6,9 @@ extends Control
 const VIEWPORT_WIDTH := 1280
 const VIEWPORT_HEIGHT := 720
 
-const CARD_SIZE := Vector2(260, 220)
-const CARD_GAP := Vector2(20, 20)
-const CARDS_PER_ROW := 4
+const CARD_SIZE := Vector2(152, 220)
+const CARD_GAP := Vector2(14, 20)
+const CARDS_PER_ROW := 7
 const GRID_TOP := 160.0
 
 var selected: Array = []

@@ -2,7 +2,7 @@ extends Node
 
 const SAVE_PATH := "user://savegame.json"
 const SAVE_VERSION := 2
-const LEVEL_COUNT := 17
+const LEVEL_COUNT := 28
 const MAX_LOADOUT := 6
 
 var current_level_index := 0
