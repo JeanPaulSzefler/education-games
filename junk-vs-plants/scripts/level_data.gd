@@ -10,6 +10,10 @@ extends RefCounted
 # poczatku ktorych na planszy pojawia sie nowa kupka smieci - z kazdej kupki
 # na starcie kazdej kolejnej fali wychodzi jeden wrog (patrz main.gd).
 #
+# TWARDA ZASADA: 1. fala kazdego poziomu ma najwyzej 4 wrogow (i nigdy nie
+# ma w niej nowej kupki smieci - "junk_pile_waves" zaczyna sie od 1). main.gd
+# i tak przycina 1. fale do MAX_FIRST_WAVE_ENEMIES, ale dane maja to spelniac.
+#
 # Bossowie: co 3 poziomy (3, 6, 9, ..., 24) i na ostatnim, 28. poziomie.
 #
 # Zasada ukladania fal: liczba wrogow w zwyklych falach rosnie lagodnie z
@@ -151,7 +155,7 @@ const LEVELS := [
 		"name": "Poziom 11 - Dworzec",
 		"boss": -1,
 		"cactus_water_multiplier": 1.25,
-		"junk_pile_waves": [0, 3],
+		"junk_pile_waves": [1, 3],
 		"blocked_tiles": [[4, 1], [7, 3]],
 		"waves": [
 			[{"type": 0, "row": 2}, {"type": 1, "row": 4}, {"type": 3, "row": 0}],
@@ -225,7 +229,7 @@ const LEVELS := [
 		"name": "Poziom 16 - Stara Fabryka",
 		"boss": -1,
 		"cactus_water_multiplier": 1.4,
-		"junk_pile_waves": [0, 2, 4],
+		"junk_pile_waves": [1, 2, 4],
 		"blocked_tiles": [[2, 2], [5, 0], [7, 4]],
 		"waves": [
 			[{"type": 0, "row": 0}, {"type": 1, "row": 2}, {"type": 2, "row": 4}, {"type": 3, "row": 1}],
@@ -272,7 +276,7 @@ const LEVELS := [
 		"boss": -1,
 		"cactus_water_multiplier": 1.44,
 		"blocked_tiles": [[3, 0], [5, 2], [7, 4]],
-		"junk_pile_waves": [0, 2, 4],
+		"junk_pile_waves": [1, 2, 4],
 		"waves": [
 			[{"type": 1, "row": 2}, {"type": 0, "row": 3}, {"type": 1, "row": 4}, {"type": 3, "row": 4}],
 			[{"type": 2, "row": 1}, {"type": 0, "row": 1}, {"type": 0, "row": 2}, {"type": 0, "row": 4}, {"type": 0, "row": 4}],
@@ -363,7 +367,7 @@ const LEVELS := [
 		"boss": -1,
 		"cactus_water_multiplier": 1.56,
 		"blocked_tiles": [[3, 0], [3, 4], [6, 2], [8, 1]],
-		"junk_pile_waves": [0, 2, 4],
+		"junk_pile_waves": [1, 2, 4],
 		"waves": [
 			[{"type": 1, "row": 1}, {"type": 0, "row": 2}, {"type": 1, "row": 3}, {"type": 1, "row": 3}],
 			[{"type": 0, "row": 1}, {"type": 2, "row": 1}, {"type": 2, "row": 2}, {"type": 2, "row": 3}, {"type": 1, "row": 3}, {"type": 3, "row": 4}],
@@ -380,7 +384,7 @@ const LEVELS := [
 		"blocked_tiles": [[2, 2], [5, 0], [5, 4], [7, 2]],
 		"junk_pile_waves": [1, 3],
 		"waves": [
-			[{"type": 1, "row": 0}, {"type": 0, "row": 2}, {"type": 1, "row": 2}, {"type": 3, "row": 3}, {"type": 0, "row": 3}, {"type": 0, "row": 4}],
+			[{"type": 1, "row": 0}, {"type": 0, "row": 2}, {"type": 3, "row": 3}, {"type": 0, "row": 4}],
 			[{"type": 2, "row": 0}, {"type": 0, "row": 0}, {"type": 3, "row": 0}, {"type": 0, "row": 0}, {"type": 1, "row": 2}, {"type": 1, "row": 2}, {"type": 1, "row": 4}],
 			[{"type": 0, "row": 0}, {"type": 2, "row": 0}, {"type": 2, "row": 1}, {"type": 2, "row": 1}, {"type": 1, "row": 2}, {"type": 2, "row": 3}, {"type": 2, "row": 3}, {"type": 0, "row": 3}, {"type": 3, "row": 4}],
 			[{"type": 2, "row": 0}, {"type": 1, "row": 1}, {"type": 2, "row": 1}, {"type": 2, "row": 1}, {"type": 2, "row": 1}, {"type": 2, "row": 2}, {"type": 3, "row": 3}, {"type": 1, "row": 3}, {"type": 1, "row": 3}, {"type": 0, "row": 4}],
@@ -393,9 +397,9 @@ const LEVELS := [
 		"boss": -1,
 		"cactus_water_multiplier": 1.6,
 		"blocked_tiles": [[1, 0], [4, 2], [6, 4], [8, 1]],
-		"junk_pile_waves": [0, 2, 4],
+		"junk_pile_waves": [1, 2, 4],
 		"waves": [
-			[{"type": 1, "row": 0}, {"type": 0, "row": 1}, {"type": 3, "row": 1}, {"type": 1, "row": 2}, {"type": 0, "row": 3}],
+			[{"type": 1, "row": 0}, {"type": 0, "row": 1}, {"type": 3, "row": 2}, {"type": 0, "row": 3}],
 			[{"type": 0, "row": 0}, {"type": 0, "row": 0}, {"type": 2, "row": 1}, {"type": 2, "row": 1}, {"type": 2, "row": 1}, {"type": 2, "row": 3}, {"type": 2, "row": 4}],
 			[{"type": 3, "row": 0}, {"type": 0, "row": 1}, {"type": 0, "row": 2}, {"type": 3, "row": 3}, {"type": 2, "row": 3}, {"type": 2, "row": 4}, {"type": 0, "row": 4}, {"type": 2, "row": 4}, {"type": 0, "row": 4}],
 			[{"type": 1, "row": 0}, {"type": 1, "row": 0}, {"type": 0, "row": 0}, {"type": 2, "row": 1}, {"type": 0, "row": 2}, {"type": 1, "row": 3}, {"type": 2, "row": 4}, {"type": 2, "row": 4}, {"type": 1, "row": 4}, {"type": 3, "row": 4}],
@@ -411,7 +415,7 @@ const LEVELS := [
 		"blocked_tiles": [[2, 1], [4, 3], [6, 0], [7, 4], [8, 2]],
 		"junk_pile_waves": [1, 3, 5],
 		"waves": [
-			[{"type": 0, "row": 1}, {"type": 3, "row": 2}, {"type": 1, "row": 3}, {"type": 1, "row": 3}, {"type": 1, "row": 4}],
+			[{"type": 0, "row": 1}, {"type": 3, "row": 2}, {"type": 1, "row": 3}, {"type": 1, "row": 4}],
 			[{"type": 1, "row": 0}, {"type": 0, "row": 1}, {"type": 1, "row": 1}, {"type": 3, "row": 2}, {"type": 0, "row": 2}, {"type": 2, "row": 2}, {"type": 2, "row": 3}],
 			[{"type": 1, "row": 0}, {"type": 0, "row": 0}, {"type": 2, "row": 0}, {"type": 1, "row": 1}, {"type": 2, "row": 2}, {"type": 3, "row": 2}, {"type": 3, "row": 2}, {"type": 3, "row": 4}, {"type": 0, "row": 4}],
 			[{"type": 2, "row": 0}, {"type": 2, "row": 1}, {"type": 3, "row": 1}, {"type": 1, "row": 2}, {"type": 1, "row": 2}, {"type": 0, "row": 2}, {"type": 3, "row": 3}, {"type": 3, "row": 3}, {"type": 2, "row": 4}],

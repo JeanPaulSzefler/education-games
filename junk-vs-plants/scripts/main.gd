@@ -108,6 +108,11 @@ const START_WATER := 100
 # tyle, ile wynosi ten ulamek jej zapisanej wielkosci (1.0 = dwa razy wiecej).
 # Dodatkowi wrogowie to kopie typow z tej samej fali, w losowych rzedach.
 const EXTRA_ENEMIES_FROM_WAVE_3 := 1.0
+# TWARDA ZASADA: w 1. fali kazdego poziomu (i trybu nieskonczonego) najwyzej
+# tylu wrogow, lacznie z tymi z kupek smieci - inaczej gracz, ktory dopiero
+# zaczyna sadzic rosliny, nie ma szans. Pilnowane w _update_wave_spawning(),
+# niezaleznie od danych w level_data.gd; w 1. fali nie pojawia sie tez kupka.
+const MAX_FIRST_WAVE_ENEMIES := 4
 const SPAWN_INTERVAL := 1.1
 const BETWEEN_WAVES_TIME := 5.0
 
@@ -643,9 +648,11 @@ func _update_wave_spawning(delta: float) -> void:
 				wave_spawn_queue = waves[current_wave].duplicate()
 				if not endless and current_wave >= 2:
 					_add_extra_enemies(wave_spawn_queue)
-				if _pile_appears_on_wave(current_wave):
+				if current_wave > 0 and _pile_appears_on_wave(current_wave):
 					_spawn_junk_pile()
 				_add_pile_enemies(wave_spawn_queue)
+				if current_wave == 0 and wave_spawn_queue.size() > MAX_FIRST_WAVE_ENEMIES:
+					wave_spawn_queue.resize(MAX_FIRST_WAVE_ENEMIES)
 				time_to_next_spawn = 0.0
 				message_label.text = "Fala %d nadchodzi!" % (current_wave + 1)
 			return
