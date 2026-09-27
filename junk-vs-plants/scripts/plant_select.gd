@@ -46,6 +46,13 @@ func _ready() -> void:
 	counter_label.add_theme_font_size_override("font_size", 16)
 	add_child(counter_label)
 
+	if level.get("endless", false):
+		var endless_label := Label.new()
+		endless_label.text = "Przetrwaj jak najdluzej, bossowie moga przyjsc w kazdej chwili. Rekord: %d" % GameState.endless_best
+		endless_label.position = Vector2(230, 84)
+		endless_label.add_theme_font_size_override("font_size", 16)
+		add_child(endless_label)
+
 	var boss_idx: int = level.get("boss", -1)
 	if boss_idx >= 0:
 		var boss_icon := TextureRect.new()

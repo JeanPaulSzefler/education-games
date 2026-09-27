@@ -40,7 +40,7 @@ const WATER_DROP_TAP_SIZE := 88
 const WATER_DROP_SPEED := 36.0
 # Brudna Gabka: predkosc, z jaka skradziona kropla "dolatuje" do stwora
 # (celowo wolniej niz normalny lot kropli, zeby gracz mial szanse ja odzyskac).
-const WATER_DROP_STEAL_SPEED := 22.0
+const WATER_DROP_STEAL_SPEED := 110.0
 const WATER_DROP_STOLEN_COLOR := Color(0.42, 0.4, 0.18)
 const FERTILIZER_VISUAL_SIZE := 40
 const FERTILIZER_TAP_SIZE := 88
@@ -84,6 +84,28 @@ const REMOVE_ACTIVE_BG_COLOR := Color(0.6, 0.12, 0.12)
 
 const START_WATER := 100
 
+# Zwykle poziomy: od 3. fali (indeks 2) kazda fala dostaje dodatkowych wrogow -
+# tyle, ile wynosi ten ulamek jej zapisanej wielkosci (1.0 = dwa razy wiecej).
+# Dodatkowi wrogowie to kopie typow z tej samej fali, w losowych rzedach.
+const EXTRA_ENEMIES_FROM_WAVE_3 := 1.0
+const SPAWN_INTERVAL := 1.1
+const BETWEEN_WAVES_TIME := 5.0
+
+# --- Tryb nieskonczony: trudnosc rosnie z czasem przetrwanym przez gracza
+# (w minutach, patrz _endless_difficulty()). ---
+const ENDLESS_FIRST_WAVE_SIZES := [2, 3]   # fale 1 i 2 celowo male
+const ENDLESS_BASE_WAVE_SIZE := 5          # fala 3
+const ENDLESS_SIZE_PER_WAVE := 1.0         # +wrogow z kazda kolejna fala
+const ENDLESS_SIZE_PER_MINUTE := 1.5       # +wrogow za kazda przetrwana minute
+const ENDLESS_HP_PER_MINUTE := 0.12        # +12% HP wrogow i bossow na minute
+const ENDLESS_SPEED_PER_MINUTE := 0.04     # +4% predkosci na minute...
+const ENDLESS_MAX_SPEED_MULT := 1.6        # ...ale najwyzej tyle
+const ENDLESS_MIN_SPAWN_INTERVAL := 0.35
+const ENDLESS_MIN_BETWEEN_WAVES := 2.0
+const ENDLESS_FIRST_BOSS_WAVE := 4         # indeks fali (5. fala) z pierwszym bossem
+const ENDLESS_BOSS_EVERY := 4              # potem boss co tyle fal
+const ENDLESS_EXTRA_BOSS_EVERY := 12       # co tyle fal kolejny boss naraz
+
 var PLANT_TYPES: Array
 var BOSS_TYPES: Array
 var waves := []
@@ -93,6 +115,11 @@ var time_to_next_spawn := 0.0
 var between_waves_timer := 0.0
 var wave_in_progress := false
 var boss_spawned := false
+
+var endless := false
+var endless_time := 0.0
+var kills := 0
+var kills_label: Label
 
 var water := START_WATER
 var fertilizer := 0
@@ -134,7 +161,10 @@ func _ready() -> void:
 	randomize()
 	PLANT_TYPES = PlantData.TYPES
 	BOSS_TYPES = BossData.TYPES
-	waves = LevelData.LEVELS[GameState.current_level_index]["waves"]
+	endless = GameState.is_endless_level(GameState.current_level_index)
+	# W trybie nieskonczonym fale sa dopisywane w locie, wiec potrzebna jest
+	# wlasna (modyfikowalna) tablica zamiast stalej z LevelData.
+	waves = [] if endless else LevelData.LEVELS[GameState.current_level_index]["waves"]
 	between_waves_timer = 3.0
 	_setup_grid_occupancy()
 	_setup_blocked_cells()
@@ -237,6 +267,15 @@ func _build_hud() -> void:
 	boss_bar_fg.size = Vector2(300, 14)
 	boss_bar_fg.visible = false
 	add_child(boss_bar_fg)
+
+	# Tryb nieskonczony: licznik pokonanych wrogow i rekord, w prawym gornym rogu.
+	kills_label = Label.new()
+	kills_label.position = Vector2(GRID_LEFT + COLS * CELL - 280, 4)
+	kills_label.size = Vector2(280, 30)
+	kills_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	kills_label.add_theme_font_size_override("font_size", 20)
+	kills_label.visible = endless
+	add_child(kills_label)
 
 func _build_water_counter() -> void:
 	var icon := _make_sprite(WATER_DROP_TEXTURE, WATER_ICON_SIZE)
@@ -510,13 +549,20 @@ func _update_hud() -> void:
 		wave_label.text = "Tryb nawozu: tapnij wlasna rosline, by ja wzmocnic"
 	elif selected_plant_type >= 0:
 		wave_label.text = "Wybrano: %s (tapnij pole ogrodu)" % PLANT_TYPES[selected_plant_type]["name"]
+	elif endless:
+		wave_label.text = "Fala: %d" % current_wave
 	else:
 		wave_label.text = "Fala: %d / %d" % [current_wave, waves.size()]
+
+	if endless:
+		kills_label.text = "Pokonani: %d    Rekord: %d" % [kills, max(kills, GameState.endless_best)]
 
 func _process(delta: float) -> void:
 	if game_over:
 		return
 
+	if endless:
+		endless_time += delta
 	_update_cooldowns(delta)
 	_update_wave_spawning(delta)
 	_update_plants(delta)
@@ -546,12 +592,18 @@ func _update_cooldowns(delta: float) -> void:
 
 # --- Fale ---
 func _update_wave_spawning(delta: float) -> void:
+	# Tryb nieskonczony: kolejna fala jest generowana, zanim bedzie potrzebna.
+	if endless and current_wave >= waves.size():
+		waves.append(_generate_endless_wave(current_wave))
+
 	if current_wave < waves.size():
 		if not wave_in_progress:
 			between_waves_timer -= delta
 			if between_waves_timer <= 0.0:
 				wave_in_progress = true
 				wave_spawn_queue = waves[current_wave].duplicate()
+				if not endless and current_wave >= 2:
+					_add_extra_enemies(wave_spawn_queue)
 				time_to_next_spawn = 0.0
 				message_label.text = "Fala %d nadchodzi!" % (current_wave + 1)
 			return
@@ -559,13 +611,17 @@ func _update_wave_spawning(delta: float) -> void:
 		time_to_next_spawn -= delta
 		if time_to_next_spawn <= 0.0 and wave_spawn_queue.size() > 0:
 			var spawn_info = wave_spawn_queue.pop_front()
-			_spawn_enemy(spawn_info["type"], spawn_info["row"])
-			time_to_next_spawn = 1.1
+			if spawn_info.has("boss"):
+				message_label.text = "%s nadchodzi!" % BOSS_TYPES[spawn_info["boss"]]["name"]
+				_spawn_boss(spawn_info["boss"], spawn_info["row"])
+			else:
+				_spawn_enemy(spawn_info["type"], spawn_info["row"])
+			time_to_next_spawn = _spawn_interval()
 
 		if wave_spawn_queue.is_empty() and enemies.is_empty() and wave_in_progress:
 			wave_in_progress = false
 			current_wave += 1
-			between_waves_timer = 5.0
+			between_waves_timer = _between_waves_time()
 			_update_hud()
 		return
 
@@ -576,7 +632,69 @@ func _update_wave_spawning(delta: float) -> void:
 		if between_waves_timer <= 0.0:
 			boss_spawned = true
 			message_label.text = "%s nadchodzi!" % BOSS_TYPES[boss_idx]["name"]
-			_spawn_boss(boss_idx)
+			_spawn_boss(boss_idx, ROWS / 2)
+
+# Zwykle poziomy, od 3. fali: dopisuje do kolejki kopie typow wrogow z tej
+# samej fali (w losowych rzedach), rozrzucone miedzy oryginalnych wrogow.
+func _add_extra_enemies(queue: Array) -> void:
+	var originals := queue.duplicate()
+	var extra := int(ceil(originals.size() * EXTRA_ENEMIES_FROM_WAVE_3))
+	for i in range(extra):
+		var src: Dictionary = originals[i % originals.size()]
+		var copy := {"type": src["type"], "row": randi_range(0, ROWS - 1)}
+		queue.insert(randi_range(1, queue.size()), copy)
+
+# --- Tryb nieskonczony ---
+# Trudnosc = liczba przetrwanych minut.
+func _endless_difficulty() -> float:
+	return endless_time / 60.0
+
+func _enemy_hp_multiplier() -> float:
+	return 1.0 + ENDLESS_HP_PER_MINUTE * _endless_difficulty() if endless else 1.0
+
+func _enemy_speed_multiplier() -> float:
+	if not endless:
+		return 1.0
+	return min(1.0 + ENDLESS_SPEED_PER_MINUTE * _endless_difficulty(), ENDLESS_MAX_SPEED_MULT)
+
+func _spawn_interval() -> float:
+	if not endless:
+		return SPAWN_INTERVAL
+	return max(ENDLESS_MIN_SPAWN_INTERVAL, SPAWN_INTERVAL - 0.06 * _endless_difficulty())
+
+func _between_waves_time() -> float:
+	if not endless:
+		return BETWEEN_WAVES_TIME
+	return max(ENDLESS_MIN_BETWEEN_WAVES, BETWEEN_WAVES_TIME - 0.25 * _endless_difficulty())
+
+# Fale 1-2 sa male i tylko z Butelek/Puszek; potem fale rosna z numerem fali
+# i z czasem gry, dochodza Golemy (od 4. fali) i Gabki (od 6.), a od 5. fali
+# co kilka fal na koncu pojawia sie losowy boss (pozniej nawet kilku naraz).
+func _generate_endless_wave(n: int) -> Array:
+	var size: int
+	if n < ENDLESS_FIRST_WAVE_SIZES.size():
+		size = ENDLESS_FIRST_WAVE_SIZES[n]
+	else:
+		var growth := (n - ENDLESS_FIRST_WAVE_SIZES.size()) * ENDLESS_SIZE_PER_WAVE
+		size = ENDLESS_BASE_WAVE_SIZE + int(growth + ENDLESS_SIZE_PER_MINUTE * _endless_difficulty())
+
+	var pool := [0, 0, 1, 1]
+	if n >= 3:
+		for i in range(min(n - 2, 4)):
+			pool.append(2)
+	if n >= 5:
+		for i in range(min(n - 4, 3)):
+			pool.append(3)
+
+	var wave := []
+	for i in range(size):
+		wave.append({"type": pool[randi() % pool.size()], "row": randi_range(0, ROWS - 1)})
+
+	if n >= ENDLESS_FIRST_BOSS_WAVE and (n - ENDLESS_FIRST_BOSS_WAVE) % ENDLESS_BOSS_EVERY == 0:
+		var boss_count := 1 + (n - ENDLESS_FIRST_BOSS_WAVE) / ENDLESS_EXTRA_BOSS_EVERY
+		for i in range(boss_count):
+			wave.append({"boss": randi() % BOSS_TYPES.size(), "row": randi_range(0, ROWS - 1)})
+	return wave
 
 func _spawn_enemy(type_idx: int, row: int) -> void:
 	var et = ENEMY_TYPES[type_idx]
@@ -585,9 +703,10 @@ func _spawn_enemy(type_idx: int, row: int) -> void:
 	node.position = Vector2(x, GRID_TOP + row * CELL + 8)
 	add_child(node)
 	var bar := _add_health_bar(node, CELL - 16)
+	var hp := int(et["hp"] * _enemy_hp_multiplier())
 	enemies.append({
-		"node": node, "hp": et["hp"], "max_hp": et["hp"], "row": row, "x": x, "type_idx": type_idx,
-		"speed": et["speed"], "bite_dmg": et["bite_dmg"], "bite_interval": et["bite_interval"],
+		"node": node, "hp": hp, "max_hp": hp, "row": row, "x": x, "type_idx": type_idx,
+		"speed": et["speed"] * _enemy_speed_multiplier(), "bite_dmg": et["bite_dmg"], "bite_interval": et["bite_interval"],
 		"bite_timer": 0.0, "bar": bar, "hurt_timer": HEALTH_BAR_HIDE_DELAY + 1.0,
 		"slow_timer": 0.0, "slow_factor": 1.0, "is_boss": false,
 		"water_thief": et.get("water_thief", false), "steal_target": null,
@@ -596,10 +715,9 @@ func _spawn_enemy(type_idx: int, row: int) -> void:
 		"base_y": node.position.y, "phase": randf_range(0.0, TAU), "anim_t": 0.0,
 	})
 
-func _spawn_boss(boss_idx: int) -> void:
+func _spawn_boss(boss_idx: int, row: int) -> void:
 	var bt = BOSS_TYPES[boss_idx]
-	var hp := int(bt["hp"] * _current_level().get("boss_hp_multiplier", 1.0))
-	var row := ROWS / 2
+	var hp := int(bt["hp"] * _current_level().get("boss_hp_multiplier", 1.0) * _enemy_hp_multiplier())
 	var node := _make_sprite(bt["texture"], CELL - 4)
 	var x := float(GRID_LEFT + COLS * CELL)
 	node.position = Vector2(x, GRID_TOP + row * CELL + 2)
@@ -607,7 +725,7 @@ func _spawn_boss(boss_idx: int) -> void:
 	var bar := _add_health_bar(node, CELL - 4)
 	enemies.append({
 		"node": node, "hp": hp, "max_hp": hp, "row": row, "x": x, "type_idx": -1,
-		"speed": bt["speed"], "bite_dmg": bt["bite_dmg"], "bite_interval": bt["bite_interval"],
+		"speed": bt["speed"] * _enemy_speed_multiplier(), "bite_dmg": bt["bite_dmg"], "bite_interval": bt["bite_interval"],
 		"bite_timer": 0.0, "bar": bar, "hurt_timer": HEALTH_BAR_HIDE_DELAY + 1.0,
 		"slow_timer": 0.0, "slow_factor": 1.0,
 		"is_boss": true, "boss_type_idx": boss_idx,
@@ -810,12 +928,22 @@ func _update_enemies(delta: float) -> void:
 				e["node"].modulate = Color(1, 1, 1)
 
 	for e in dead:
-		_release_stolen_drop(e)
-		e["node"].queue_free()
-		enemies.erase(e)
+		_kill_enemy(e)
 
 	if reached_house:
 		_lose_game()
+
+# Jedyne miejsce, w ktorym pokonany wrog znika z gry (strzaly, kontratak,
+# wybuch, wichura) - oddaje ewentualnie porwana krople i liczy pokonanych.
+func _kill_enemy(e: Dictionary) -> void:
+	if not enemies.has(e):
+		return
+	_release_stolen_drop(e)
+	e["node"].queue_free()
+	enemies.erase(e)
+	kills += 1
+	if endless:
+		_update_hud()
 
 func _plant_ahead(e: Dictionary) -> Variant:
 	var col := int((e["x"] - GRID_LEFT) / CELL)
@@ -949,8 +1077,7 @@ func _trigger_gust(plant: Dictionary, pt: Dictionary) -> void:
 			if e["hp"] <= 0:
 				dead.append(e)
 	for e in dead:
-		e["node"].queue_free()
-		enemies.erase(e)
+		_kill_enemy(e)
 	_remove_plant(plant, false)
 
 # Przesuwajaca sie niebieska chmurka: startuje w polu rosliny i leci do
@@ -991,8 +1118,7 @@ func _trigger_bomb(plant: Dictionary, pt: Dictionary) -> void:
 			if e["hp"] <= 0:
 				dead.append(e)
 	for e in dead:
-		e["node"].queue_free()
-		enemies.erase(e)
+		_kill_enemy(e)
 	_remove_plant(plant, false)
 
 # Wybuch Bumorzecha: pomaranczowe kolko rosnie do ok. 3 pol srednicy z
@@ -1322,6 +1448,8 @@ func _make_sprite(texture_path: String, target_size: int) -> TextureRect:
 
 # --- Koniec gry ---
 func _check_win_condition() -> void:
+	if endless:
+		return
 	if current_wave < waves.size():
 		return
 	if not enemies.is_empty() or wave_in_progress:
@@ -1358,6 +1486,19 @@ func _lose_game() -> void:
 	lose_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	lose_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(lose_label)
+
+	if endless:
+		var new_record := GameState.submit_endless_score(kills)
+		var score_label := Label.new()
+		score_label.text = ("NOWY REKORD! " if new_record else "") + "Pokonani wrogowie: %d  (rekord: %d)" % [kills, GameState.endless_best]
+		score_label.add_theme_font_size_override("font_size", 26)
+		score_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
+		score_label.position = Vector2(VIEWPORT_WIDTH / 2.0 - 400, VIEWPORT_HEIGHT / 2.0 + 160)
+		score_label.size = Vector2(800, 40)
+		score_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		score_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(score_label)
+		_update_hud()
 
 	_show_end_buttons()
 

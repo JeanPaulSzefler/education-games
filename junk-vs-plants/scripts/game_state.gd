@@ -18,6 +18,9 @@ var completed_levels: Array = []
 # i tak wychodza z JSON.
 var loadouts: Dictionary = {}
 
+# Rekord trybu nieskonczonego: najwieksza liczba pokonanych wrogow w jednej grze.
+var endless_best := 0
+
 func _ready() -> void:
 	completed_levels = []
 	for i in range(LEVEL_COUNT):
@@ -49,6 +52,19 @@ func unlocked_plant_indices() -> Array:
 			result.append(i)
 	return result
 
+func is_endless_level(i: int) -> bool:
+	if i < 0 or i >= LevelData.LEVELS.size():
+		return false
+	return LevelData.LEVELS[i].get("endless", false)
+
+# Zwraca true, jesli to nowy rekord (i od razu go zapisuje).
+func submit_endless_score(kills: int) -> bool:
+	if kills <= endless_best:
+		return false
+	endless_best = kills
+	save_progress()
+	return true
+
 func complete_level(i: int) -> void:
 	if i < 0 or i >= completed_levels.size():
 		return
@@ -70,6 +86,7 @@ func save_progress() -> void:
 		"version": SAVE_VERSION,
 		"completed_levels": completed_levels,
 		"loadouts": loadouts,
+		"endless_best": endless_best,
 	}
 	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if file:
@@ -97,6 +114,10 @@ func load_progress() -> void:
 	if loaded_completed is Array:
 		for i in range(min(loaded_completed.size(), completed_levels.size())):
 			completed_levels[i] = bool(loaded_completed[i])
+
+	var loaded_best = parsed.get("endless_best", 0)
+	if typeof(loaded_best) == TYPE_FLOAT or typeof(loaded_best) == TYPE_INT:
+		endless_best = max(0, int(loaded_best))
 
 	var loaded_loadouts = parsed.get("loadouts", {})
 	if loaded_loadouts is Dictionary:

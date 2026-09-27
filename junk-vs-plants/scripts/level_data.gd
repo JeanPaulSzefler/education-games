@@ -12,6 +12,8 @@ extends RefCounted
 # kazdym poziomie jest zawsze najwieksza: bez bossa - ok. 2x tyle wrogow co
 # najwieksza z wczesniejszych fal; z bossem - ok. 1,3x tyle (boss i tak
 # domyka finał).
+# Uwaga: od 3. fali wzwyz main.gd doklada do kazdej fali dodatkowych wrogow
+# (EXTRA_ENEMIES_FROM_WAVE_3), wiec realnie sa one ok. 2x wieksze niz tutaj.
 const LEVELS := [
 	{
 		"name": "Poziom 1 - Podworko",
@@ -237,5 +239,15 @@ const LEVELS := [
 			[{"type": 0, "row": 0}, {"type": 1, "row": 1}, {"type": 2, "row": 1}, {"type": 3, "row": 2}, {"type": 0, "row": 2}, {"type": 1, "row": 3}, {"type": 2, "row": 3}, {"type": 3, "row": 4}],
 			[{"type": 0, "row": 0}, {"type": 1, "row": 0}, {"type": 2, "row": 1}, {"type": 3, "row": 1}, {"type": 1, "row": 2}, {"type": 0, "row": 2}, {"type": 2, "row": 3}, {"type": 3, "row": 3}, {"type": 1, "row": 4}, {"type": 0, "row": 4}],
 		],
+	},
+	{
+		# Tryb nieskonczony: odblokowuje sie po poziomie 17. Fale (lacznie z
+		# bossami) generuje main.gd -> _generate_endless_wave(); gra trwa, az
+		# smieci dotra do domu, a wynikiem jest liczba pokonanych wrogow.
+		"name": "Tryb nieskonczony - Wieczna Gora Smieci",
+		"endless": true,
+		"boss": -1,
+		"cactus_water_multiplier": 1.0,
+		"waves": [],
 	},
 ]

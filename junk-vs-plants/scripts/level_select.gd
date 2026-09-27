@@ -128,7 +128,8 @@ func _build_level_node(level_idx: int, x: float) -> void:
 	btn.size = Vector2(LEVEL_NODE_SIZE, LEVEL_NODE_SIZE)
 	btn.position = Vector2(x - LEVEL_NODE_SIZE / 2.0, NODE_Y - LEVEL_NODE_SIZE / 2.0)
 	btn.pivot_offset = Vector2(LEVEL_NODE_SIZE / 2.0, LEVEL_NODE_SIZE / 2.0)
-	btn.text = str(level_idx + 1)
+	var endless := GameState.is_endless_level(level_idx)
+	btn.text = "∞" if endless else str(level_idx + 1)
 	btn.add_theme_font_size_override("font_size", 36)
 	btn.disabled = not unlocked
 	btn.focus_mode = Control.FOCUS_NONE
@@ -137,7 +138,9 @@ func _build_level_node(level_idx: int, x: float) -> void:
 	btn.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	var color: Color
-	if completed:
+	if endless and unlocked:
+		color = Color(0.55, 0.3, 0.75)
+	elif completed:
 		color = Color(0.25, 0.7, 0.3)
 	elif unlocked:
 		color = Color(0.85, 0.75, 0.2)
@@ -171,6 +174,17 @@ func _build_level_node(level_idx: int, x: float) -> void:
 	name_label.add_theme_font_size_override("font_size", 13)
 	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	path_layer.add_child(name_label)
+
+	if endless and GameState.endless_best > 0:
+		var best_label := Label.new()
+		best_label.text = "Rekord: %d" % GameState.endless_best
+		best_label.position = Vector2(x - 70, NODE_Y + LEVEL_NODE_SIZE / 2.0 + 28)
+		best_label.size = Vector2(140, 26)
+		best_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		best_label.add_theme_font_size_override("font_size", 14)
+		best_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
+		best_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		path_layer.add_child(best_label)
 
 	var boss_idx: int = level.get("boss", -1)
 	if boss_idx >= 0:
