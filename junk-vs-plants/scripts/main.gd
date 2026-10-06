@@ -102,6 +102,17 @@ const TILE_COOLDOWN_SHADE := Color(0, 0, 0, 0.6)
 const REMOVE_BTN_SIZE := 64.0
 const REMOVE_ACTIVE_BG_COLOR := Color(0.6, 0.12, 0.12)
 
+# --- Przyciski "WYJSCIE" i pauza nad prawym gornym rogiem planszy (notatki
+# 2026-10-06). Okienka pauzy i "Czy na pewno?" leza na osobnej warstwie
+# (CanvasLayer), ktora dziala takze przy zatrzymanym drzewie gry. ---
+const TOP_BTN_HEIGHT := 52.0
+const PAUSE_BTN_WIDTH := 52.0
+const EXIT_BTN_WIDTH := 120.0
+const TOP_BTN_GAP := 8.0
+const OVERLAY_LAYER := 10
+const STAY_BTN_COLOR := Color(0.25, 0.6, 0.25)
+const LEAVE_BTN_COLOR := Color(0.75, 0.18, 0.15)
+
 const START_WATER := 100
 
 # Zwykle poziomy: od 3. fali (indeks 2) kazda fala dostaje dodatkowych wrogow -
@@ -154,6 +165,9 @@ var fertilizer_mode := false
 var remove_mode := false
 var remove_button: Button
 var remove_border_sb: StyleBoxFlat
+# Otwarte okienko pauzy albo "Czy na pewno?" (null = gra toczy sie normalnie).
+var pause_layer: CanvasLayer
+var top_buttons: Array = []
 # plant_idx -> pozostaly czas odnowienia (s); brak wpisu = roslina gotowa.
 var plant_cooldowns := {}
 
@@ -199,6 +213,7 @@ func _ready() -> void:
 	_build_background()
 	_build_grid_visual()
 	_build_hud()
+	_build_top_buttons()
 	_build_water_counter()
 	_build_plant_bar()
 	_build_fertilizer_tile()
@@ -296,9 +311,10 @@ func _build_hud() -> void:
 	boss_bar_fg.visible = false
 	add_child(boss_bar_fg)
 
-	# Tryb nieskonczony: licznik pokonanych wrogow i rekord, w prawym gornym rogu.
+	# Tryb nieskonczony: licznik pokonanych wrogow i rekord, w prawym gornym
+	# rogu, pod przyciskami WYJSCIE i pauzy.
 	kills_label = Label.new()
-	kills_label.position = Vector2(GRID_LEFT + COLS * CELL - 280, 4)
+	kills_label.position = Vector2(GRID_LEFT + COLS * CELL - 280, TOP_BTN_HEIGHT + 4)
 	kills_label.size = Vector2(280, 30)
 	kills_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	kills_label.add_theme_font_size_override("font_size", 20)
@@ -430,6 +446,145 @@ func _build_remove_button() -> void:
 		remove_button.add_theme_stylebox_override(state, remove_border_sb)
 	remove_button.pressed.connect(_on_remove_button_pressed)
 	add_child(remove_button)
+
+# --- WYJSCIE i pauza ---
+func _build_top_buttons() -> void:
+	var right := GRID_LEFT + COLS * CELL
+
+	var pause_btn := _make_top_button(Vector2(right - PAUSE_BTN_WIDTH, 2), Vector2(PAUSE_BTN_WIDTH, TOP_BTN_HEIGHT))
+	var icon := UiIcons.pause(TOP_BTN_HEIGHT - 12)
+	icon.position = Vector2(6, 6)
+	pause_btn.add_child(icon)
+	pause_btn.pressed.connect(_on_pause_pressed)
+
+	var exit_btn := _make_top_button(Vector2(right - PAUSE_BTN_WIDTH - TOP_BTN_GAP - EXIT_BTN_WIDTH, 2), Vector2(EXIT_BTN_WIDTH, TOP_BTN_HEIGHT))
+	exit_btn.text = "WYJSCIE"
+	exit_btn.add_theme_font_size_override("font_size", 20)
+	exit_btn.pressed.connect(_on_exit_pressed)
+
+	top_buttons = [pause_btn, exit_btn]
+
+# Po koncu gry sa juz przyciski "Zagraj ponownie" / "Wybierz poziom".
+func _hide_top_buttons() -> void:
+	for btn in top_buttons:
+		btn.visible = false
+
+func _make_top_button(pos: Vector2, btn_size: Vector2) -> Button:
+	var btn := Button.new()
+	btn.position = pos
+	btn.size = btn_size
+	btn.focus_mode = Control.FOCUS_NONE
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = TILE_BG_COLOR
+	sb.set_border_width_all(TILE_BORDER_WIDTH)
+	sb.border_color = TILE_BORDER_COLOR
+	sb.set_corner_radius_all(10)
+	for state in ["normal", "hover", "pressed"]:
+		btn.add_theme_stylebox_override(state, sb)
+	add_child(btn)
+	return btn
+
+func _on_pause_pressed() -> void:
+	if game_over or pause_layer != null:
+		return
+	var layer := _open_pause_layer(Color(0.1, 0.25, 0.1, 0.7))
+
+	# Duzy przycisk "graj" na srodku ekranu - wznawia gre.
+	var size := 180.0
+	var resume_btn := Button.new()
+	resume_btn.position = Vector2(VIEWPORT_WIDTH - size, VIEWPORT_HEIGHT - size) / 2.0
+	resume_btn.size = Vector2(size, size)
+	resume_btn.focus_mode = Control.FOCUS_NONE
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.95, 0.95, 0.9)
+	sb.set_border_width_all(6)
+	sb.border_color = Color(0.2, 0.2, 0.2)
+	sb.set_corner_radius_all(24)
+	for state in ["normal", "hover", "pressed"]:
+		resume_btn.add_theme_stylebox_override(state, sb)
+	var icon := UiIcons.play(size - 40, Color(0.15, 0.15, 0.15))
+	icon.position = Vector2(20, 20)
+	resume_btn.add_child(icon)
+	resume_btn.pressed.connect(_close_pause_layer)
+	layer.add_child(resume_btn)
+
+func _on_exit_pressed() -> void:
+	if game_over or pause_layer != null:
+		return
+	var layer := _open_pause_layer(Color(0, 0, 0, 0.55))
+
+	var panel := Panel.new()
+	panel.size = Vector2(460, 240)
+	panel.position = (Vector2(VIEWPORT_WIDTH, VIEWPORT_HEIGHT) - panel.size) / 2.0
+	var panel_sb := StyleBoxFlat.new()
+	panel_sb.bg_color = Color(0.95, 0.93, 0.85)
+	panel_sb.set_border_width_all(5)
+	panel_sb.border_color = Color(0.25, 0.2, 0.15)
+	panel_sb.set_corner_radius_all(18)
+	panel.add_theme_stylebox_override("panel", panel_sb)
+	layer.add_child(panel)
+
+	var question := Label.new()
+	question.text = "Czy na pewno?"
+	question.add_theme_font_size_override("font_size", 36)
+	question.add_theme_color_override("font_color", Color(0.15, 0.12, 0.1))
+	question.position = Vector2(0, 30)
+	question.size = Vector2(panel.size.x, 50)
+	question.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	panel.add_child(question)
+
+	var stay_btn := _make_dialog_button("ZOSTAN", STAY_BTN_COLOR, Vector2(40, 130))
+	stay_btn.pressed.connect(_close_pause_layer)
+	panel.add_child(stay_btn)
+
+	var leave_btn := _make_dialog_button("WYJDZ", LEAVE_BTN_COLOR, Vector2(250, 130))
+	leave_btn.pressed.connect(_leave_to_level_select)
+	panel.add_child(leave_btn)
+
+func _make_dialog_button(label: String, color: Color, pos: Vector2) -> Button:
+	var btn := Button.new()
+	btn.text = label
+	btn.position = pos
+	btn.size = Vector2(170, 70)
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.add_theme_font_size_override("font_size", 26)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = color
+	sb.set_corner_radius_all(35)
+	for state in ["normal", "hover", "pressed"]:
+		btn.add_theme_stylebox_override(state, sb)
+	return btn
+
+# Zatrzymuje gre (wrogow, pociski, krople, animacje) i zaslania ja
+# polprzezroczystym tlem, ktore tez blokuje klikanie w plansze.
+func _open_pause_layer(shade: Color) -> CanvasLayer:
+	pause_layer = CanvasLayer.new()
+	pause_layer.layer = OVERLAY_LAYER
+	pause_layer.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(pause_layer)
+
+	var bg := ColorRect.new()
+	bg.color = shade
+	bg.position = Vector2(0, 0)
+	bg.size = Vector2(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
+	bg.mouse_filter = Control.MOUSE_FILTER_STOP
+	pause_layer.add_child(bg)
+
+	get_tree().paused = true
+	return pause_layer
+
+func _close_pause_layer() -> void:
+	get_tree().paused = false
+	if pause_layer != null:
+		pause_layer.queue_free()
+		pause_layer = null
+
+func _leave_to_level_select() -> void:
+	# W trybie nieskonczonym przerwana gra tez moze pobic rekord.
+	if endless:
+		GameState.submit_endless_score(kills)
+	get_tree().paused = false
+	get_tree().change_scene_to_file("res://scenes/LevelSelect.tscn")
 
 func _on_plant_button_pressed(idx: int) -> void:
 	if game_over:
@@ -1213,6 +1368,8 @@ func _kill_enemy(e: Dictionary) -> void:
 	kills += 1
 	if endless:
 		_update_hud()
+		if GameState.try_award_endless_ruby(kills):
+			_show_ruby_reward(kills_label.position + Vector2(kills_label.size.x - 120, 34), 42)
 
 func _plant_ahead(e: Dictionary) -> Variant:
 	var col := int((e["x"] - GRID_LEFT) / CELL)
@@ -1768,6 +1925,7 @@ func _check_win_condition() -> void:
 
 func _lose_game() -> void:
 	game_over = true
+	_hide_top_buttons()
 	message_label.text = "PRZEGRANA - smieci dotarly do domu!"
 
 	var overlay := ColorRect.new()
@@ -1811,6 +1969,7 @@ func _lose_game() -> void:
 
 func _win_game() -> void:
 	game_over = true
+	_hide_top_buttons()
 	message_label.text = "WYGRANA - obronles ogrod!"
 	GameState.complete_level(GameState.current_level_index)
 
@@ -1825,6 +1984,10 @@ func _win_game() -> void:
 	win_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	win_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(win_label)
+
+	# Rubin tylko za pierwsze wygranie tego poziomu.
+	if GameState.award_level_ruby(GameState.current_level_index):
+		_show_ruby_reward(Vector2(VIEWPORT_WIDTH / 2.0 - 70, VIEWPORT_HEIGHT / 2.0 - 10), 64, false)
 
 	var delay := get_tree().create_timer(1.5)
 	delay.timeout.connect(_show_end_buttons)
@@ -1862,6 +2025,41 @@ func _spawn_confetti() -> void:
 
 	var cleanup := get_tree().create_timer(3.2)
 	cleanup.timeout.connect(particles.queue_free)
+
+# "+1 [rubin]" wyskakujacy w danym miejscu; fade = po chwili znika (w trakcie
+# gry), bez fade zostaje na ekranie (ekran wygranej).
+func _show_ruby_reward(pos: Vector2, icon_size: float, fade := true) -> void:
+	var box := Control.new()
+	box.position = pos
+	box.size = Vector2(icon_size * 2.2, icon_size)
+	box.pivot_offset = box.size / 2.0
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.scale = Vector2(0.01, 0.01)
+	add_child(box)
+
+	var plus := Label.new()
+	plus.text = "+1"
+	plus.add_theme_font_size_override("font_size", int(icon_size * 0.75))
+	plus.add_theme_color_override("font_color", UiIcons.RUBY_LIGHT_COLOR)
+	plus.add_theme_color_override("font_outline_color", UiIcons.RUBY_DARK_COLOR.darkened(0.5))
+	plus.add_theme_constant_override("outline_size", 8)
+	plus.position = Vector2(0, 0)
+	plus.size = Vector2(icon_size * 1.1, icon_size)
+	plus.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	plus.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	plus.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(plus)
+
+	var ruby := UiIcons.ruby(icon_size)
+	ruby.position = Vector2(icon_size * 1.2, 0)
+	box.add_child(ruby)
+
+	var tw := box.create_tween()
+	tw.tween_property(box, "scale", Vector2(1, 1), 0.4).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	if fade:
+		tw.tween_interval(1.5)
+		tw.tween_property(box, "modulate:a", 0.0, 0.6)
+		tw.tween_callback(box.queue_free)
 
 func _make_square_texture(size: int) -> ImageTexture:
 	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
