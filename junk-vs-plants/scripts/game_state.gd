@@ -29,6 +29,9 @@ const TEAM_WIN_COINS := 50
 const FERTILIZER_START_LIMIT := 2
 const FERTILIZER_LIMIT_PRICES := [5, 6, 7, 8]
 
+# Kod testowy pozwala raz zmienic wydarzenie. W kodzie gry jest tylko jego skrot.
+const TEST_CODE_SHA256 := "e0277cd898e021d443fe6817322b8f98623cb9a0a366e5daa39e03c47bf79959"
+
 # Ogrod: 8 pol, roslinka rosnie 15 godzin i daje 50 roslimonet. Przyspieszenie
 # kosztuje 15 rubinow, a pszczolka zabiera 3 godziny i wraca po 15-30 minutach.
 const GARDEN_PLOTS := 8
@@ -108,6 +111,8 @@ var shared_my_harvests := 0
 var shared_friend_harvests := 0
 var shared_goal_paid := false
 var shared_gift_day := 0
+# Kod testowy: zapisane postepy wydarzen, id wydarzenia -> postepy.
+var event_saved_progress: Dictionary = {}
 
 # Rosliny, w ktorych kolko na sciezce gracz juz "wszedl" (indeksy w PlantData.TYPES).
 # Rosliny z unlock_level 1 sa dostepne od startu i nie trzeba ich odbierac.
@@ -160,6 +165,7 @@ func _reset_progress() -> void:
 	event_started = 0
 	event_level = {}
 	event_help_active = false
+	event_saved_progress = {}
 	_reset_event_progress()
 	claimed_plants = []
 	unlocked_icons = []
@@ -312,6 +318,55 @@ func _reset_event_progress() -> void:
 	shared_friend_harvests = 0
 	shared_goal_paid = false
 	shared_gift_day = 0
+
+# --- Kod testowy: zmiana wydarzenia ---
+func is_test_code(code: String) -> bool:
+	return code.strip_edges().sha256_text() == TEST_CODE_SHA256
+
+# Przechodzi na wybrane wydarzenie, ktore startuje z pelnym tygodniem. Postepy
+# obecnego mozna zachowac na powrot do niego; bez zachowania przepadaja.
+func switch_event(event_idx: int, keep_progress: bool) -> void:
+	var current := current_event()
+	if not current.is_empty():
+		if keep_progress:
+			event_saved_progress[current["id"]] = _event_progress()
+		else:
+			event_saved_progress.erase(current["id"])
+	event_index = event_idx
+	event_started = _now()
+	_reset_event_progress()
+	var event_id: String = EventData.ROTATION[event_idx]["id"]
+	if event_saved_progress.has(event_id):
+		_restore_event_progress(event_saved_progress[event_id])
+		event_saved_progress.erase(event_id)
+	save_progress()
+
+func _event_progress() -> Dictionary:
+	return {
+		"completed_stages": event_completed_stages,
+		"stars": event_stars,
+		"hunt_coins": event_hunt_coins,
+		"hunt_thresholds": event_hunt_thresholds,
+		"shared_choice": shared_choice,
+		"shared_my_harvests": shared_my_harvests,
+		"shared_friend_harvests": shared_friend_harvests,
+		"shared_goal_paid": shared_goal_paid,
+		"shared_gift_day": shared_gift_day,
+	}
+
+func _restore_event_progress(saved: Dictionary) -> void:
+	for stage in saved.get("completed_stages", []):
+		event_completed_stages.append(int(stage))
+	var stars: Dictionary = saved.get("stars", {})
+	for key in stars.keys():
+		event_stars[str(key)] = int(stars[key])
+	event_hunt_coins = _loaded_int(saved, "hunt_coins")
+	event_hunt_thresholds = _loaded_int(saved, "hunt_thresholds")
+	shared_choice = str(saved.get("shared_choice", ""))
+	shared_my_harvests = _loaded_int(saved, "shared_my_harvests")
+	shared_friend_harvests = _loaded_int(saved, "shared_friend_harvests")
+	shared_goal_paid = bool(saved.get("shared_goal_paid", false))
+	shared_gift_day = _loaded_int(saved, "shared_gift_day")
 
 func is_event_stage_open(stage: int) -> bool:
 	# Lowy: mozna grac dowolny etap, bo liczy sie suma monet.
@@ -746,6 +801,7 @@ func save_progress() -> void:
 		"shared_friend_harvests": shared_friend_harvests,
 		"shared_goal_paid": shared_goal_paid,
 		"shared_gift_day": shared_gift_day,
+		"event_saved_progress": event_saved_progress,
 		"unlocked_icons": unlocked_icons,
 		"icon_unlock_steps": icon_unlock_steps,
 	}
@@ -845,6 +901,11 @@ func _load_v3_fields(parsed: Dictionary) -> void:
 	shared_gift_day = _loaded_int(parsed, "shared_gift_day")
 	shared_goal_paid = bool(parsed.get("shared_goal_paid", false))
 	shared_choice = str(parsed.get("shared_choice", ""))
+	var loaded_saved = parsed.get("event_saved_progress", {})
+	if loaded_saved is Dictionary:
+		for key in loaded_saved.keys():
+			if loaded_saved[key] is Dictionary:
+				event_saved_progress[str(key)] = loaded_saved[key]
 	var loaded_stars = parsed.get("event_stars", {})
 	if loaded_stars is Dictionary:
 		for key in loaded_stars.keys():

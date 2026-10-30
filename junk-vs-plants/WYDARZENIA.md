@@ -22,6 +22,10 @@ Każde wydarzenie ma 5 etapów o rosnącej trudności (trudność poziomów 2, 6
 | 13 | Łowy na roślimonety | standardowe | Wrogowie upuszczają monety po 5 (szansa 25%); etapy otwarte od razu | brak | sadzonki 2/2/3/3/4 za progi 50/150/300/500/800 monet, zamiast nagród za etapy |
 | 14 | Taśma z podglądem | z taśmy | Widać 3 kolejne rośliny | 20 za wymianę rośliny, każdą raz, w trakcie gry | – |
 
+## Kod testowy
+
+Na plakietce każdego konta jest przycisk „Kod testowy”. Poprawny kod pozwala raz zmienić bieżące wydarzenie na dowolne inne, a kolejna zmiana wymaga ponownego wpisania kodu. Gracz decyduje, czy postępy z opuszczanego wydarzenia mają się zapisać. Zapisane wracają przy ponownym przejściu na to wydarzenie kodem. Wybrane wydarzenie startuje z pełnym tygodniem, a potem gra przechodzi do następnego w kolejności. W repozytorium jest tylko skrót kodu (`TEST_CODE_SHA256` w `scripts/game_state.gd`).
+
 ## Sadzenie razem (opcja w tygodniu Łowów)
 
 To nie jest osobny tydzień. Podczas Łowów ogród pyta gracza, czy chce sadzić razem ze znajomym. Dzięki temu w tym tygodniu sadzonki można zdobywać w Łowach.

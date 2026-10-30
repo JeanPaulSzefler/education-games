@@ -940,6 +940,10 @@ func _show_player_edit(draft_name := GameState.player_name, draft_icon := GameSt
 	name_edit.add_theme_font_size_override("font_size", 24)
 	panel.add_child(name_edit)
 
+	var code_btn := _popup_button("Kod testowy", CORNER_BTN_COLOR, Vector2(570, 76), Vector2(200, 52))
+	code_btn.pressed.connect(_show_code_entry)
+	panel.add_child(code_btn)
+
 	var icon_caption := _popup_label("Ikona:", 22)
 	icon_caption.position = Vector2(40, 182)
 	panel.add_child(icon_caption)
@@ -1058,6 +1062,75 @@ func _show_greeting(on_finished: Callable) -> void:
 	greeting.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	panel.add_child(greeting)
 	popup.create_tween().tween_callback(on_finished).set_delay(GREETING_SECONDS)
+
+# --- Kod testowy: poprawny kod pozwala raz zmienic wydarzenie. Wyjscie z tych
+# okienek albo zmiana wydarzenia zuzywa kod, wiec nastepnym razem trzeba wpisac go znowu. ---
+func _show_code_entry() -> void:
+	var panel := _open_popup(Vector2(620, 320), "Kod testowy")
+
+	var code_edit := LineEdit.new()
+	code_edit.placeholder_text = "Wpisz kod"
+	code_edit.position = Vector2(110, 86)
+	code_edit.size = Vector2(400, 56)
+	code_edit.add_theme_font_size_override("font_size", 26)
+	panel.add_child(code_edit)
+
+	var error_label := _popup_label("", 20)
+	error_label.position = Vector2(0, 150)
+	error_label.size = Vector2(panel.size.x, 30)
+	error_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	error_label.add_theme_color_override("font_color", Color(0.75, 0.2, 0.15))
+	panel.add_child(error_label)
+
+	var ok_btn := _popup_button("Sprawdz", OK_BTN_COLOR, Vector2((panel.size.x - 220) / 2.0, 206), Vector2(220, 70))
+	ok_btn.pressed.connect(func():
+		if GameState.is_test_code(code_edit.text):
+			_show_event_switch()
+		else:
+			error_label.text = "Niepoprawny kod.")
+	panel.add_child(ok_btn)
+
+func _show_event_switch() -> void:
+	var panel := _open_popup(Vector2(1080, 640), "Wybierz wydarzenie")
+	var columns := 3
+	var btn_size := Vector2(330, 90)
+	var gap := 14.0
+	var start_x := (panel.size.x - (columns * btn_size.x + (columns - 1) * gap)) / 2.0
+	for i in range(EventData.ROTATION.size()):
+		var event: Dictionary = EventData.ROTATION[i]
+		var pos := Vector2(start_x + (i % columns) * (btn_size.x + gap), 76 + int(i / float(columns)) * (btn_size.y + gap))
+		var btn := _popup_button(event["name"], CORNER_BTN_COLOR, pos, btn_size)
+		btn.add_theme_font_size_override("font_size", 22)
+		btn.disabled = i == GameState.event_index and not GameState.current_event().is_empty()
+		var event_idx := i
+		btn.pressed.connect(func(): _show_progress_choice(event_idx))
+		panel.add_child(btn)
+
+# Postepy obecnego wydarzenia: gracz decyduje, czy maja zostac na pozniej.
+func _show_progress_choice(event_idx: int) -> void:
+	var current := GameState.current_event()
+	if current.is_empty():
+		_finish_event_switch(event_idx, false)
+		return
+	var panel := _open_popup(Vector2(680, 340), "", false)
+	var question := _popup_label("Zapisac postepy z wydarzenia \"%s\"?" % current["name"], 28)
+	question.position = Vector2(40, 40)
+	question.size = Vector2(panel.size.x - 80, 130)
+	question.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	question.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	panel.add_child(question)
+
+	var drop_btn := _popup_button("Nie zapisuj", DELETE_BTN_COLOR, Vector2(50, 220), Vector2(270, 80))
+	drop_btn.pressed.connect(func(): _finish_event_switch(event_idx, false))
+	panel.add_child(drop_btn)
+
+	var keep_btn := _popup_button("Zapisz", OK_BTN_COLOR, Vector2(panel.size.x - 320, 220), Vector2(270, 80))
+	keep_btn.pressed.connect(func(): _finish_event_switch(event_idx, true))
+	panel.add_child(keep_btn)
+
+func _finish_event_switch(event_idx: int, keep_progress: bool) -> void:
+	GameState.switch_event(event_idx, keep_progress)
+	get_tree().change_scene_to_file("res://scenes/Events.tscn")
 
 func _show_net_notice() -> void:
 	var panel := _open_popup(Vector2(640, 220), "Gra zespolowa")
