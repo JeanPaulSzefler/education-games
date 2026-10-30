@@ -82,7 +82,7 @@ junk-vs-plants/
 3. **Project → Export...** → dodaj preset "Android" → **Export Project** → zapisz plik `.apk`.
 4. Przenieś `.apk` na telefon (kabel/USB, Google Drive, itp.) i zainstaluj (włącz "Instalacja z nieznanych źródeł" w ustawieniach Androida), albo użyj `adb install junk-vs-plants.apk` po podłączeniu telefonu kablem z włączonym trybem debugowania USB.
 
-Gotowe wersje testowe trafiają do `releases/` pod nazwą `JunkVsPlants-<data>-<commit>.apk`. Pliki `.apk` są ignorowane przez Git, a `.gdignore` sprawia, że Godot pomija ten folder.
+Gotowe wersje testowe trafiają do `releases/` pod nazwą `JunkVsPlants-<data>-<commit>.apk`. Pliki `.apk` są śledzone przez Git, a `.gdignore` sprawia, że Godot pomija ten folder.
 
 ## Co dalej (kolejne kroki rozwoju)
 
