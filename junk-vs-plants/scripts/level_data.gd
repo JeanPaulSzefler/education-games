@@ -27,6 +27,12 @@ extends RefCounted
 const TEAM_FIRST_FULL_BOSS_LEVEL := 5
 const TEAM_EARLY_BOSS_HP := 0.6
 
+# Plansze po Sercu Gory Smieci, dodane razem z Megakaktusem (poziomy 57-60).
+const EXTRA_BOARDS := [
+	{"name": "Krater Smieci", "from": 26, "extra": 2, "boss": -1, "cactus_water_multiplier": 1.62},
+	{"name": "Szczyt Gory Smieci", "from": 27, "extra": 2, "boss": 3, "boss_hp_multiplier": 2.4, "cactus_water_multiplier": 1.64},
+]
+
 const BASE_LEVELS := [
 	{
 		"name": "Poziom 1 - Podworko",
@@ -448,24 +454,50 @@ const BASE_LEVELS := [
 static var LEVELS: Array = _build_levels()
 
 static func _build_levels() -> Array:
-	var result := []
-	for i in range(BASE_LEVELS.size()):
-		var base: Dictionary = BASE_LEVELS[i]
+	var boards := []
+	var endless := {}
+	for base in BASE_LEVELS:
 		if base.get("endless", false):
-			result.append(base)
-			continue
+			endless = base
+		else:
+			boards.append(base)
+	for extra in EXTRA_BOARDS:
+		boards.append(_harder_board(extra))
+
+	var result := []
+	for i in range(boards.size()):
+		var base: Dictionary = boards[i]
 		var place: String = base["name"].get_slice(" - ", 1)
 		var first: Dictionary = base.duplicate(true)
 		first["name"] = "Poziom %d - %s" % [result.size() + 1, place]
 		first["boss"] = -1
 		first.erase("boss_hp_multiplier")
 		if i > 0:
-			first["cactus_water_multiplier"] = (base["cactus_water_multiplier"] + BASE_LEVELS[i - 1]["cactus_water_multiplier"]) / 2.0
+			first["cactus_water_multiplier"] = (base["cactus_water_multiplier"] + boards[i - 1]["cactus_water_multiplier"]) / 2.0
 		result.append(first)
 		var second := _mirrored(base)
 		second["name"] = "Poziom %d - %s II" % [result.size() + 1, place]
 		result.append(second)
+	result.append(endless)
 	return result
+
+# Plansza dodatkowa: kopia planszy "from" z "extra" wrogami wiecej w kazdej fali
+# poza pierwsza (ta ma zawsze najwyzej 4 wrogow).
+static func _harder_board(extra: Dictionary) -> Dictionary:
+	var board: Dictionary = BASE_LEVELS[extra["from"]].duplicate(true)
+	board["name"] = "Poziom 0 - %s" % extra["name"]
+	board["boss"] = extra["boss"]
+	board["cactus_water_multiplier"] = extra["cactus_water_multiplier"]
+	if extra.has("boss_hp_multiplier"):
+		board["boss_hp_multiplier"] = extra["boss_hp_multiplier"]
+	else:
+		board.erase("boss_hp_multiplier")
+	for w in range(1, board["waves"].size()):
+		var wave: Array = board["waves"][w]
+		var size := wave.size()
+		for k in range(extra["extra"]):
+			wave.append({"type": wave[k % size]["type"], "row": (k * 2 + w) % 5})
+	return board
 
 static func _mirrored(base: Dictionary) -> Dictionary:
 	var level: Dictionary = base.duplicate(true)

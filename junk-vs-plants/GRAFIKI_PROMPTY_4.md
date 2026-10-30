@@ -71,3 +71,37 @@ TECHNICAL: square image, 1024x1024 px, fully TRANSPARENT background (PNG with
 alpha). No background color, no ground, no drop shadow, no text, no letters,
 no numbers, no watermark.
 ```
+
+## 3. Megakaktus → `assets/sprites/plants/mega_cactus.png`
+
+W repo jest tymczasowo przebarwiony Kaktus; ten plik trzeba nadpisać. Jeśli generator pozwala, dołącz `assets/sprites/plants/cactus.png` jako referencję.
+
+```
+Create a single game sprite: a cute cartoon GIANT CACTUS for a children's
+tower-defense game where garden plants fight living trash monsters.
+
+SUBJECT: a big, proud, chubby round barrel cactus, clearly larger and stronger
+looking than an ordinary little cactus. Deep emerald green body with vertical
+ribs, and short pale-yellow spines drawn as small simple triangles. Two short
+stubby side arms stick out to the left and right. On top sit two small pink
+flower buds. It has a cute confident face in the middle: big round black eyes
+with small white highlights, and a wide happy smile. Two plump blue water drops
+float just above its arms, one on each side, showing that it makes two drops at
+once. It stands on a small lumpy mound of dark brown soil.
+
+ART STYLE (important, match exactly):
+- flat 2D cartoon sticker art, chibi-kawaii, like a modern mobile game icon
+- thick, uniform, solid BLACK outline around the whole character and around
+  every separate part (body, each arm, each flower bud, each drop, soil mound)
+- simple cel shading: each color has only one flat darker shade on one side
+  plus one small light highlight shape; no gradients, no textures, no
+  realistic lighting, no blur
+- bright, saturated, cheerful colors
+- eyes drawn as simple black shapes with a small white highlight dot
+- composition: centered, front view, the character fills about 85-90% of the
+  image, small empty margin around it
+
+TECHNICAL: square image, 1024x1024 px, fully TRANSPARENT background (PNG with
+alpha). No background color, no ground, no drop shadow, no text, no letters,
+no numbers, no watermark.
+```

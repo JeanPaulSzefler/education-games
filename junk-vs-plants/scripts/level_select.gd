@@ -72,6 +72,7 @@ var pointer_down := false
 var drag_total := 0.0
 
 func _ready() -> void:
+	GameState.clear_event_game()
 	var bg := ColorRect.new()
 	bg.color = Color(0.15, 0.25, 0.15)
 	bg.position = Vector2(0, 0)
@@ -541,6 +542,15 @@ func _build_corner_buttons() -> void:
 	var plants_btn := _make_corner_button(Vector2(CORNER_MARGIN, bottom_y), "Moje roslinki")
 	_add_centered_icon(plants_btn, UiIcons.plant_icon(MY_PLANTS_ICON_PLANT, CORNER_BTN_SIZE - 16))
 	plants_btn.pressed.connect(_show_my_plants)
+
+	# Wydarzenia poza sciezka: ogrod (stale) i wydarzenie tygodnia.
+	var center_x := VIEWPORT_WIDTH / 2.0
+	var garden_btn := _make_corner_button(Vector2(center_x - CORNER_BTN_SIZE - 30, bottom_y), "Ogrod")
+	_add_centered_icon(garden_btn, UiIcons.sapling(CORNER_BTN_SIZE - 16))
+	garden_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/Garden.tscn"))
+	var event_btn := _make_corner_button(Vector2(center_x + 30, bottom_y), "Wydarzenie")
+	_add_centered_icon(event_btn, UiIcons.star(CORNER_BTN_SIZE - 16))
+	event_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/Events.tscn"))
 
 	_build_player_badge(bottom_y)
 

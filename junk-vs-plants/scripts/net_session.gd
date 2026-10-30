@@ -16,7 +16,7 @@ extends Node
 const DISCOVERY_PORT := 47810
 const GAME_PORT := 47811
 # Podnosic przy kazdej zmianie protokolu - rozne wersje gry sie nie widza.
-const PROTOCOL_VERSION := 2
+const PROTOCOL_VERSION := 3
 const ANNOUNCE_INTERVAL := 1.0
 const PLAYER_TIMEOUT := 3.5
 const INVITE_RESEND_INTERVAL := 1.0

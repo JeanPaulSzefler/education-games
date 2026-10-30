@@ -13,6 +13,16 @@ const RUBY_DARK_COLOR := Color(0.55, 0.04, 0.18)
 const CHEST_TEXTURE := "res://assets/sprites/ui/chest.png"
 const COIN_TEXTURE := "res://assets/sprites/ui/plant_coin.png"
 
+const TINT_SHADER_CODE := """
+shader_type canvas_item;
+uniform vec3 tint;
+void fragment() {
+	vec4 tex = texture(TEXTURE, UV);
+	float gray = dot(tex.rgb, vec3(0.3, 0.59, 0.11));
+	COLOR = vec4(min(vec3(gray) * tint * 1.5, vec3(1.0)), tex.a);
+}
+"""
+
 const GRAY_SHADER_CODE := """
 shader_type canvas_item;
 void fragment() {
@@ -134,6 +144,49 @@ static func plant_icon_gray(plant_idx: int, icon_size: float) -> TextureRect:
 	material.shader = shader
 	icon.material = material
 	return icon
+
+# Rysunek rosliny w jednym kolorze - zachowuje kontury i cienie oryginalu.
+static func plant_icon_tinted(plant_idx: int, icon_size: float, tint: Color) -> TextureRect:
+	var icon := plant_icon(plant_idx, icon_size)
+	var shader := Shader.new()
+	shader.code = TINT_SHADER_CODE
+	var material := ShaderMaterial.new()
+	material.shader = shader
+	material.set_shader_parameter("tint", Vector3(tint.r, tint.g, tint.b))
+	icon.material = material
+	return icon
+
+# Sadzonka: dwa listki na lodyzce.
+static func sapling(size: float) -> Control:
+	var c := _box(size)
+	_line(c, size, [Vector2(0.5, 0.9), Vector2(0.5, 0.48)], Color(0.3, 0.55, 0.2), max(3.0, size * 0.07))
+	_poly(c, size, [Vector2(0.5, 0.52), Vector2(0.2, 0.42), Vector2(0.12, 0.18), Vector2(0.4, 0.26)], Color(0.45, 0.8, 0.3))
+	_poly(c, size, [Vector2(0.5, 0.46), Vector2(0.8, 0.36), Vector2(0.88, 0.12), Vector2(0.6, 0.2)], Color(0.35, 0.7, 0.25))
+	_poly(c, size, [Vector2(0.3, 0.9), Vector2(0.7, 0.9), Vector2(0.62, 0.8), Vector2(0.38, 0.8)], Color(0.45, 0.3, 0.16))
+	return c
+
+# Gwiazdka (wydarzenia).
+static func star(size: float) -> Control:
+	var c := _box(size)
+	var points := []
+	for i in range(10):
+		var radius := 0.46 if i % 2 == 0 else 0.2
+		points.append(Vector2(0.5, 0.52) + Vector2.from_angle(TAU * i / 10.0 - PI / 2.0) * radius)
+	_poly(c, size, points, Color(0.98, 0.8, 0.2))
+	return c
+
+# Pszczolka: zolto-czarny brzuszek i dwa skrzydelka.
+static func bee(size: float) -> Control:
+	var c := _box(size)
+	var wing := Color(0.85, 0.95, 1.0, 0.85)
+	_poly(c, size, [Vector2(0.34, 0.42), Vector2(0.2, 0.12), Vector2(0.46, 0.2), Vector2(0.52, 0.4)], wing)
+	_poly(c, size, [Vector2(0.52, 0.4), Vector2(0.6, 0.12), Vector2(0.82, 0.22), Vector2(0.66, 0.44)], wing)
+	_poly(c, size, [Vector2(0.14, 0.58), Vector2(0.28, 0.4), Vector2(0.72, 0.4), Vector2(0.9, 0.58), Vector2(0.72, 0.78), Vector2(0.28, 0.78)], Color(0.98, 0.8, 0.15))
+	var stripe := Color(0.12, 0.1, 0.08)
+	for x in [0.36, 0.56]:
+		_poly(c, size, [Vector2(x, 0.4), Vector2(x + 0.1, 0.4), Vector2(x + 0.1, 0.78), Vector2(x, 0.78)], stripe)
+	_poly(c, size, [Vector2(0.2, 0.5), Vector2(0.25, 0.5), Vector2(0.25, 0.56), Vector2(0.2, 0.56)], stripe)
+	return c
 
 # Grafika z pliku, gdy juz jest w grze; inaczej null (patrz chest, plant_coin).
 static func _texture_icon(path: String, size: float) -> TextureRect:

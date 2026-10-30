@@ -6,14 +6,14 @@ extends RefCounted
 #                   wystrzeliwuje naraz "volley_count" pociskow (od gory do dolu pola)
 #       "aimed"     strzela w szkodnika w DOWOLNYM rzedzie (najblizszego domu),
 #                   pocisk leci za celem
-#       "generator" co jakis czas tworzy kropelke wody do zebrania
+#       "generator" co jakis czas tworzy "water_drops" kropelek wody do zebrania (domyslnie 1)
 #       "wall"      tylko blokuje, nie atakuje
 #       "melee"     kontratakuje szkodnika w chwili gdy ten ja gryzie (pole "counter_dmg")
 #       "freeze"    jednorazowa: gdy szkodnik na nia stanie, znika, a ten szkodnik
 #                   zostaje calkowicie unieruchomiony na "slow_duration" (tylko on, nie caly rzad)
 #       "burn"      jednorazowa: gdy szkodnik na nia stanie, znika, a ten szkodnik plonie
 #                   przez "burn_duration" s, tracac w sumie "burn_dmg" HP (moze isc dalej)
-#       "bomb"      jednorazowa: po czasie "fuse_time" wybucha, raniac wszystko w pobliskich polach
+#       "bomb"      jednorazowa: wybucha od razu, gdy szkodnik dojdzie do jej pola, raniac wszystko dookola
 #       "gust"      jednorazowa: gdy JAKIKOLWIEK szkodnik pojawi sie w jej rzedzie
 #                   (nie trzeba czekac, az ja dotknie), rani ("gust_dmg") i odrzuca
 #                   ("knockback", w pikselach) caly rzad, po czym znika
@@ -28,7 +28,7 @@ extends RefCounted
 # wyboru w taliii. Po ukonczeniu poziomu (unlock_level - 1) gracz musi jeszcze
 # "wejsc" w kolko rosliny na sciezce (GameState.claim_plant) - dopiero wtedy
 # roslina odblokowuje sie na stale, a nastepny poziom sie otwiera.
-# Nowa roslina co ok. 5 poziomow, a miedzy roslinami skrzynie z nagrodami
+# Nowa roslina co ok. 5 poziomow, a co druga przerwe miedzy nimi skrzynia z nagroda
 # (GameState.chest_levels).
 #
 # Kolejnosc w tablicy = indeksy zapisane w talii gracza (savegame), wiec nowe
@@ -75,9 +75,9 @@ const TYPES := [
 	},
 	{
 		"name": "Bumorzech", "recharge": 15.0, "cost": 90, "hp": 40, "role": "bomb",
-		"fuse_time": 1.5, "blast_dmg": 300, "blast_radius_cells": 1, "unlock_level": 30,
+		"blast_dmg": 300, "blast_radius_cells": 1, "unlock_level": 30,
 		"texture": "res://assets/sprites/plants/bomb_nut.png",
-		"description": "Po chwili wybucha i mocno rani wszystkie smieci dookola.",
+		"description": "Czeka, az smiec dojdzie do jej pola, i wtedy wybucha, mocno raniac wszystkie smieci dookola.",
 	},
 	{
 		"name": "Wichurowy", "recharge": 12.0, "cost": 60, "hp": 40, "role": "gust",
@@ -115,5 +115,11 @@ const TYPES := [
 		"unlock_level": 16,
 		"texture": "res://assets/sprites/plants/vines.png",
 		"description": "Sadzi sie je tylko na kupce smieci - od razu ja niszcza.",
+	},
+	{
+		"name": "Megakaktus", "recharge": 8.0, "cost": 75, "hp": 120, "role": "generator",
+		"water_interval": 9.0, "water_value": 20, "water_drops": 2, "unlock_level": 57,
+		"texture": "res://assets/sprites/plants/mega_cactus.png",
+		"description": "Wiekszy kuzyn Kaktusa: daje po dwie krople wody naraz.",
 	},
 ]
