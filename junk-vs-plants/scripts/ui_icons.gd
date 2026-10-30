@@ -2,7 +2,8 @@ class_name UiIcons
 extends RefCounted
 
 # Proste ikonki interfejsu rysowane w kodzie (Polygon2D/Line2D wewnatrz
-# Control), bez dodatkowych plikow graficznych - jak animacje z rundy C.
+# Control) - jak animacje z rundy C. Gdy w grze jest gotowa grafika
+# (GRAFIKI_PROMPTY_5.md), funkcja zwraca ja zamiast rysunku.
 # Kazda funkcja zwraca Control o rozmiarze size x size, ktory nie lapie
 # klikniec (mouse_filter IGNORE), wiec mozna go wlozyc do przycisku.
 
@@ -12,6 +13,15 @@ const RUBY_DARK_COLOR := Color(0.55, 0.04, 0.18)
 
 const CHEST_TEXTURE := "res://assets/sprites/ui/chest.png"
 const COIN_TEXTURE := "res://assets/sprites/ui/plant_coin.png"
+const RUBY_TEXTURE := "res://assets/sprites/ui/ruby.png"
+const BOOK_TEXTURE := "res://assets/sprites/ui/book.png"
+const SHOP_TEXTURE := "res://assets/sprites/ui/shop_basket.png"
+const SAPLING_TEXTURE := "res://assets/sprites/ui/sapling.png"
+const STAR_TEXTURE := "res://assets/sprites/ui/event_star.png"
+const BEE_TEXTURE := "res://assets/sprites/ui/bee.png"
+const PADLOCK_TEXTURE := "res://assets/sprites/ui/padlock.png"
+const SOIL_TEXTURE := "res://assets/sprites/ui/soil_plot.png"
+const FOG_TEXTURE := "res://assets/sprites/ui/fog.png"
 
 const TINT_SHADER_CODE := """
 shader_type canvas_item;
@@ -61,6 +71,9 @@ static func _line(parent: Control, size: float, points: Array, color: Color, wid
 
 # Rubin (waluta za wygrane poziomy).
 static func ruby(size: float) -> Control:
+	var file_icon := _texture_icon(RUBY_TEXTURE, size)
+	if file_icon != null:
+		return file_icon
 	var c := _box(size)
 	_poly(c, size, [Vector2(0.25, 0.12), Vector2(0.75, 0.12), Vector2(0.98, 0.38),
 		Vector2(0.5, 0.94), Vector2(0.02, 0.38)], RUBY_COLOR)
@@ -71,6 +84,9 @@ static func ruby(size: float) -> Control:
 
 # Otwarta ksiazka ("Opis gry").
 static func book(size: float) -> Control:
+	var file_icon := _texture_icon(BOOK_TEXTURE, size)
+	if file_icon != null:
+		return file_icon
 	var c := _box(size)
 	var cover := Color(0.45, 0.28, 0.12)
 	var page := Color(0.97, 0.94, 0.85)
@@ -85,6 +101,9 @@ static func book(size: float) -> Control:
 
 # Koszyk ("Sklep").
 static func shop(size: float) -> Control:
+	var file_icon := _texture_icon(SHOP_TEXTURE, size)
+	if file_icon != null:
+		return file_icon
 	var c := _box(size)
 	var handle := Color(0.5, 0.3, 0.12)
 	_line(c, size, [Vector2(0.28, 0.44), Vector2(0.32, 0.22), Vector2(0.5, 0.12),
@@ -158,6 +177,9 @@ static func plant_icon_tinted(plant_idx: int, icon_size: float, tint: Color) -> 
 
 # Sadzonka: dwa listki na lodyzce.
 static func sapling(size: float) -> Control:
+	var file_icon := _texture_icon(SAPLING_TEXTURE, size)
+	if file_icon != null:
+		return file_icon
 	var c := _box(size)
 	_line(c, size, [Vector2(0.5, 0.9), Vector2(0.5, 0.48)], Color(0.3, 0.55, 0.2), max(3.0, size * 0.07))
 	_poly(c, size, [Vector2(0.5, 0.52), Vector2(0.2, 0.42), Vector2(0.12, 0.18), Vector2(0.4, 0.26)], Color(0.45, 0.8, 0.3))
@@ -167,6 +189,9 @@ static func sapling(size: float) -> Control:
 
 # Gwiazdka (wydarzenia).
 static func star(size: float) -> Control:
+	var file_icon := _texture_icon(STAR_TEXTURE, size)
+	if file_icon != null:
+		return file_icon
 	var c := _box(size)
 	var points := []
 	for i in range(10):
@@ -177,6 +202,9 @@ static func star(size: float) -> Control:
 
 # Pszczolka: zolto-czarny brzuszek i dwa skrzydelka.
 static func bee(size: float) -> Control:
+	var file_icon := _texture_icon(BEE_TEXTURE, size)
+	if file_icon != null:
+		return file_icon
 	var c := _box(size)
 	var wing := Color(0.85, 0.95, 1.0, 0.85)
 	_poly(c, size, [Vector2(0.34, 0.42), Vector2(0.2, 0.12), Vector2(0.46, 0.2), Vector2(0.52, 0.4)], wing)
@@ -201,8 +229,23 @@ static func _texture_icon(path: String, size: float) -> TextureRect:
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return icon
 
-# Skrzynia z nagrodami. Rysunek z kodu dziala do czasu dodania grafiki z
-# GRAFIKI_PROMPTY_4.md.
+# Tlo pola w ogrodzie i kafelek mgly: null, dopoki nie ma grafiki (wtedy gra
+# uzywa jednolitego koloru).
+static func soil_plot(plot_size: Vector2) -> TextureRect:
+	var icon := _texture_icon(SOIL_TEXTURE, plot_size.x)
+	if icon != null:
+		icon.size = plot_size
+		icon.custom_minimum_size = plot_size
+		icon.stretch_mode = TextureRect.STRETCH_SCALE
+	return icon
+
+static func fog_tile(size: float) -> TextureRect:
+	var icon := _texture_icon(FOG_TEXTURE, size)
+	if icon != null:
+		icon.stretch_mode = TextureRect.STRETCH_SCALE
+	return icon
+
+# Skrzynia z nagrodami.
 static func chest(size: float) -> Control:
 	var file_icon := _texture_icon(CHEST_TEXTURE, size)
 	if file_icon != null:
@@ -235,6 +278,9 @@ static func plant_coin(size: float) -> Control:
 
 # Klodka (ikonka rosliny, ktorej gracz jeszcze nie odblokowal).
 static func padlock(size: float) -> Control:
+	var file_icon := _texture_icon(PADLOCK_TEXTURE, size)
+	if file_icon != null:
+		return file_icon
 	var c := _box(size)
 	_line(c, size, [Vector2(0.3, 0.46), Vector2(0.3, 0.28), Vector2(0.4, 0.14), Vector2(0.6, 0.14),
 		Vector2(0.7, 0.28), Vector2(0.7, 0.46)], Color(0.3, 0.3, 0.32), max(3.0, size * 0.09))

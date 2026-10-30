@@ -517,6 +517,43 @@ static func fertilizer_count(level_idx: int) -> int:
 		return 1
 	return 2 if level_idx < 40 else 3
 
+# Plansza etapu wydarzenia: fale poziomu zmienione wedlug zasad wydarzenia.
+static func event_level(event: Dictionary, stage: int) -> Dictionary:
+	var level: Dictionary = LEVELS[EventData.STAGES[stage]["level_idx"]].duplicate(true)
+	level["name"] = "%s - etap %d" % [event["name"], stage + 1]
+	if event.has("boss_rush"):
+		level["boss"] = -1
+		level["junk_pile_waves"] = []
+		level["waves"] = _boss_rush_waves(event["boss_rush"][stage])
+		return level
+	if event.has("short_waves"):
+		level["waves"] = level["waves"].slice(-event["short_waves"])
+		level["boss"] = -1
+	for wave_idx in range(level["waves"].size()):
+		var wave: Array = level["waves"][wave_idx]
+		if event.has("enemy_count"):
+			wave = _scaled_wave(wave, event["enemy_count"])
+			level["waves"][wave_idx] = wave
+		if event.has("narrow_rows"):
+			var rows: Array = event["narrow_rows"]
+			for enemy in wave:
+				enemy["row"] = rows[enemy["row"] % rows.size()]
+	return level
+
+static func _scaled_wave(wave: Array, ratio: float) -> Array:
+	var count: int = max(1, roundi(wave.size() * ratio))
+	var result := []
+	for k in range(count):
+		result.append(wave[k % wave.size()].duplicate())
+	return result
+
+# Kazda fala to jeden boss, a kazdy nastepny jest silniejszy.
+static func _boss_rush_waves(count: int) -> Array:
+	var result := []
+	for k in range(count):
+		result.append([{"boss": k % BossData.TYPES.size(), "row": 2, "hp": 1.0 + k * EventData.BOSS_RUSH_HP_STEP}])
+	return result
+
 # Plansza gry zespolowej: trudnosc poziomu sredniego obu graczy, zawsze z bossem.
 static func team_level(difficulty_idx: int, boss_idx: int) -> Dictionary:
 	var level: Dictionary = LEVELS[difficulty_idx].duplicate(true)

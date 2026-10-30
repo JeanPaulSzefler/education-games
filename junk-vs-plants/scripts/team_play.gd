@@ -30,7 +30,8 @@ func _ready() -> void:
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
 
-	var title := _label("Gra zespolowa", 44, Vector2(0, 30), VIEWPORT_WIDTH)
+	var garden := NetSession.mode == NetSession.MODE_GARDEN
+	var title := _label("Sadzimy razem" if garden else "Gra zespolowa", 44, Vector2(0, 30), VIEWPORT_WIDTH)
 	add_child(title)
 	add_child(_label("Wybierz znajomego. Musicie byc w tej samej sieci Wi-Fi albo na hotspocie jednego z telefonow.", 22, Vector2(0, 100), VIEWPORT_WIDTH))
 	add_child(_label("Znajomy tez musi miec otwarty ten ekran na swoim koncie.", 22, Vector2(0, 136), VIEWPORT_WIDTH))
@@ -151,12 +152,14 @@ func _on_invite_failed(reason: String) -> void:
 	status_label.text = reason
 
 func _on_session_started() -> void:
-	get_tree().change_scene_to_file("res://scenes/PlantSelect.tscn")
+	var garden := NetSession.mode == NetSession.MODE_GARDEN
+	get_tree().change_scene_to_file("res://scenes/SharedGarden.tscn" if garden else "res://scenes/PlantSelect.tscn")
 
 func _on_back_pressed() -> void:
+	var garden := NetSession.mode == NetSession.MODE_GARDEN
 	NetSession.cancel_invite()
 	NetSession.end_session()
-	get_tree().change_scene_to_file("res://scenes/LevelSelect.tscn")
+	get_tree().change_scene_to_file("res://scenes/Garden.tscn" if garden else "res://scenes/LevelSelect.tscn")
 
 func _open_popup(text: String) -> Panel:
 	_close_popup()

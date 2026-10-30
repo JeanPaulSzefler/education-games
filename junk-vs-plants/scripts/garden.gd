@@ -79,6 +79,63 @@ func _ready() -> void:
 
 	_refresh()
 	_harvest_ready_plots()
+	_build_shared_controls()
+
+# Tydzien Low: gracz wybiera, czy sadzi razem ze znajomym. Gdy tak, na ekranie
+# jest przycisk polaczenia ze znajomym.
+func _build_shared_controls() -> void:
+	if not GameState.is_shared_garden_offered():
+		return
+	if GameState.shared_choice == "":
+		_show_shared_question()
+		return
+	if not GameState.is_shared_garden_on():
+		return
+	var btn := _button("Sadzimy razem", OK_BTN_COLOR, Vector2(TOOL_X, PLOTS_Y + 2.0 * (TOOL_SIZE.y + PLOT_GAP)), TOOL_SIZE)
+	btn.pressed.connect(func():
+		NetSession.mode = NetSession.MODE_GARDEN
+		get_tree().change_scene_to_file("res://scenes/TeamPlay.tscn"))
+	add_child(btn)
+	GameState.try_pay_shared_goal()
+
+func _show_shared_question() -> void:
+	var panel := _open_popup_panel("W tym tygodniu mozesz sadzic razem ze znajomym: wspolny cel, wymiana sadzonek i 2 razy wieksza nagroda. Zatwierdzasz?")
+	var no_btn := _button("Nie", TOOL_COLOR, Vector2(50, 190), Vector2(240, 70))
+	no_btn.pressed.connect(func():
+		GameState.set_shared_choice(false)
+		_close_popup())
+	panel.add_child(no_btn)
+	var yes_btn := _button("Zatwierdzam", OK_BTN_COLOR, Vector2(panel.size.x - 290, 190), Vector2(240, 70))
+	yes_btn.pressed.connect(func():
+		GameState.set_shared_choice(true)
+		_close_popup()
+		_build_shared_controls())
+	panel.add_child(yes_btn)
+
+func _open_popup_panel(text: String) -> Panel:
+	popup = Control.new()
+	popup.size = Vector2(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
+	add_child(popup)
+	var shade := ColorRect.new()
+	shade.color = Color(0, 0, 0, 0.6)
+	shade.size = popup.size
+	popup.add_child(shade)
+
+	var panel := Panel.new()
+	panel.size = Vector2(620, 290)
+	panel.position = (popup.size - panel.size) / 2.0
+	var sb := UiIcons.round_style(POPUP_BG_COLOR, 18)
+	sb.set_border_width_all(5)
+	sb.border_color = Color(0.25, 0.2, 0.15)
+	panel.add_theme_stylebox_override("panel", sb)
+	popup.add_child(panel)
+
+	var question := _label(text, 24, Vector2(20, 30), panel.size.x - 40)
+	question.size.y = 150
+	question.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	question.add_theme_color_override("font_color", POPUP_TEXT_COLOR)
+	panel.add_child(question)
+	return panel
 
 func _process(delta: float) -> void:
 	tick -= delta
@@ -163,6 +220,9 @@ func _build_plots() -> void:
 	timer_labels.clear()
 	for i in range(GameState.GARDEN_PLOTS):
 		var btn := _button("", SOIL_COLOR, _plot_position(i), PLOT_SIZE)
+		var soil := UiIcons.soil_plot(PLOT_SIZE)
+		if soil != null:
+			btn.add_child(soil)
 		var plot: Dictionary = GameState.garden_plots[i]
 		match plot["state"]:
 			GameState.PLOT_SAPLING:
@@ -256,32 +316,13 @@ func _fly_bee_away() -> void:
 
 # --- Przyspieszanie za rubiny ---
 func _show_rush_popup(i: int) -> void:
-	popup = Control.new()
-	popup.size = Vector2(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
-	add_child(popup)
-	var shade := ColorRect.new()
-	shade.color = Color(0, 0, 0, 0.6)
-	shade.size = popup.size
-	popup.add_child(shade)
+	var panel := _open_popup_panel("Przyspieszyc te roslinke za %d rubinow?" % GameState.GARDEN_RUSH_RUBIES)
 
-	var panel := Panel.new()
-	panel.size = Vector2(620, 280)
-	panel.position = (popup.size - panel.size) / 2.0
-	var sb := UiIcons.round_style(POPUP_BG_COLOR, 18)
-	sb.set_border_width_all(5)
-	sb.border_color = Color(0.25, 0.2, 0.15)
-	panel.add_theme_stylebox_override("panel", sb)
-	popup.add_child(panel)
-
-	var question := _label("Przyspieszyc te roslinke za %d rubinow?" % GameState.GARDEN_RUSH_RUBIES, 26, Vector2(20, 50), panel.size.x - 40)
-	question.add_theme_color_override("font_color", POPUP_TEXT_COLOR)
-	panel.add_child(question)
-
-	var no_btn := _button("Wroc", TOOL_COLOR, Vector2(50, 170), Vector2(240, 70))
+	var no_btn := _button("Wroc", TOOL_COLOR, Vector2(50, 190), Vector2(240, 70))
 	no_btn.pressed.connect(_close_popup)
 	panel.add_child(no_btn)
 
-	var yes_btn := _button("Przyspiesz", OK_BTN_COLOR, Vector2(panel.size.x - 290, 170), Vector2(240, 70))
+	var yes_btn := _button("Przyspiesz", OK_BTN_COLOR, Vector2(panel.size.x - 290, 190), Vector2(240, 70))
 	yes_btn.disabled = GameState.rubies < GameState.GARDEN_RUSH_RUBIES
 	yes_btn.pressed.connect(func():
 		_close_popup()

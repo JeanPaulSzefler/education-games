@@ -16,7 +16,10 @@ extends Node
 const DISCOVERY_PORT := 47810
 const GAME_PORT := 47811
 # Podnosic przy kazdej zmianie protokolu - rozne wersje gry sie nie widza.
-const PROTOCOL_VERSION := 3
+const PROTOCOL_VERSION := 4
+# Po co sie laczymy: gra na planszy albo sadzenie razem (bez planszy).
+const MODE_GAME := "game"
+const MODE_GARDEN := "garden"
 const ANNOUNCE_INTERVAL := 1.0
 const PLAYER_TIMEOUT := 3.5
 const INVITE_RESEND_INTERVAL := 1.0
@@ -39,9 +42,13 @@ signal action_received(kind: String, args: Array)
 signal action_error_received(text: String)
 signal place_confirmed(plant_idx: int)
 signal game_over_received(won: bool, enemy_texture: String)
+signal garden_harvests_received(count: int)
+signal garden_gift_received
 
 # Trwa gra zespolowa (obaj gracze polaczeni).
 var active := false
+# Tryb zaproszen wysylanych z ekranu TeamPlay i tryb trwajacej sesji.
+var mode := MODE_GAME
 var is_host := false
 # Host: gosc jest juz na scenie gry i symulacja moze ruszyc.
 var guest_in_game := false
@@ -226,7 +233,7 @@ func _update_invites() -> void:
 			_abort_invite("Znajomy nie potwierdzil gry.")
 		elif clock >= outgoing_invite["next_send"]:
 			outgoing_invite["next_send"] = clock + INVITE_RESEND_INTERVAL
-			_send({"t": "invite", "name": GameState.player_name, "token": outgoing_invite["token"]}, outgoing_invite["ip"])
+			_send({"t": "invite", "name": GameState.player_name, "token": outgoing_invite["token"], "mode": mode}, outgoing_invite["ip"])
 	# Zaproszenie przestalo przychodzic - zapraszajacy zniknal.
 	if not incoming_invite.is_empty() and enet == null and clock - incoming_invite["seen"] > INCOMING_INVITE_TIMEOUT:
 		incoming_invite = {}
@@ -250,12 +257,14 @@ func _on_invite(packet: Dictionary, sender: String, ip: String) -> void:
 		_send({"t": "decline"}, ip)
 		return
 	var from_name := str(packet["name"]).left(GameState.PLAYER_NAME_MAX_LENGTH)
-	incoming_invite = {"id": sender, "name": from_name, "ip": ip, "token": token, "seen": clock}
+	var invite_mode := MODE_GARDEN if packet.get("mode") == MODE_GARDEN else MODE_GAME
+	incoming_invite = {"id": sender, "name": from_name, "ip": ip, "token": token, "seen": clock, "mode": invite_mode}
 	invite_received.emit(from_name)
 
 func accept_invite() -> void:
 	if incoming_invite.is_empty():
 		return
+	mode = incoming_invite["mode"]
 	enet = ENetMultiplayerPeer.new()
 	if enet.create_client(incoming_invite["ip"], GAME_PORT) != OK:
 		enet = null
@@ -318,6 +327,7 @@ func end_session() -> void:
 	guest_ready = false
 	guest_peer_id = 0
 	outgoing_invite = {}
+	mode = MODE_GAME
 	GameState.team_level = {}
 	_close_peer()
 	stop_discovery()
@@ -338,6 +348,10 @@ func _rpc_join(token: String, guest_level: int, guest_fertilizer_limit: int) -> 
 		enet.disconnect_peer(sender)
 		return
 	guest_peer_id = sender
+	if mode == MODE_GARDEN:
+		_rpc_garden_welcome.rpc_id(sender)
+		_begin_session(true)
+		return
 	var level := clampi(guest_level, 0, GameState.LEVEL_COUNT - 1)
 	var difficulty := LevelData.team_difficulty(GameState.team_level_index(), level)
 	var boss := LevelData.random_team_boss(difficulty)
@@ -350,6 +364,28 @@ func _rpc_join(token: String, guest_level: int, guest_fertilizer_limit: int) -> 
 func _rpc_welcome(difficulty: int, boss: int, fertilizer_limit: int) -> void:
 	_setup_team_game(difficulty, boss, fertilizer_limit)
 	_begin_session(false)
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_garden_welcome() -> void:
+	_begin_session(false)
+
+# --- Sadzenie razem ---
+func _other_peer() -> int:
+	return guest_peer_id if is_host else 1
+
+func send_garden_harvests(count: int) -> void:
+	_rpc_garden_harvests.rpc_id(_other_peer(), count)
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_garden_harvests(count: int) -> void:
+	garden_harvests_received.emit(clampi(count, 0, 10000))
+
+func send_garden_gift() -> void:
+	_rpc_garden_gift.rpc_id(_other_peer())
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_garden_gift() -> void:
+	garden_gift_received.emit()
 
 func _setup_team_game(difficulty: int, boss: int, fertilizer_limit: int) -> void:
 	GameState.current_level_index = difficulty

@@ -54,6 +54,10 @@ var team_level := {}
 # Plansza etapu wydarzenia (pusta poza wydarzeniem) i numer tego etapu.
 var event_level := {}
 var event_stage := 0
+# Pomoc kupiona na ten etap (zuzywa ja nastepne wejscie na plansze) i rosliny
+# wylosowane na etap Narzuconej talii.
+var event_help_active := false
+var event_forced_plants: Array = []
 
 # Talia na biezaca gre - ustawiana przez ekran wyboru talii (PlantSelect),
 # odczytywana przez main.gd przy budowie paska roslin.
@@ -92,6 +96,18 @@ var next_bee_time := 0
 var event_index := 0
 var event_started := 0
 var event_completed_stages: Array = []
+# Wyscig: najlepsze gwiazdki na etap (String(etap) -> 1-3).
+var event_stars: Dictionary = {}
+# Lowy: suma monet z tygodnia i liczba osiagnietych progow.
+var event_hunt_coins := 0
+var event_hunt_thresholds := 0
+# Sadzenie razem: wybor gracza ("" = jeszcze nie zapytany, "yes", "no"), zbiory
+# obojga, czy cel juz wyplacony i kiedy poszedl darmowy prezent (dzien Unix).
+var shared_choice := ""
+var shared_my_harvests := 0
+var shared_friend_harvests := 0
+var shared_goal_paid := false
+var shared_gift_day := 0
 
 # Rosliny, w ktorych kolko na sciezce gracz juz "wszedl" (indeksy w PlantData.TYPES).
 # Rosliny z unlock_level 1 sa dostepne od startu i nie trzeba ich odbierac.
@@ -142,8 +158,9 @@ func _reset_progress() -> void:
 	next_bee_time = 0
 	event_index = 0
 	event_started = 0
-	event_completed_stages = []
 	event_level = {}
+	event_help_active = false
+	_reset_event_progress()
 	claimed_plants = []
 	unlocked_icons = []
 	icon_unlock_steps = {}
@@ -269,7 +286,7 @@ func refresh_event() -> void:
 	if event_started > 0 and _now() - event_started >= EventData.DURATION_DAYS * 86400:
 		event_index += 1
 		event_started = 0
-		event_completed_stages = []
+		_reset_event_progress()
 		changed = true
 	if event_started == 0 and event_index < EventData.ROTATION.size():
 		event_started = _now()
@@ -285,16 +302,57 @@ func current_event() -> Dictionary:
 func event_seconds_left() -> int:
 	return max(0, EventData.DURATION_DAYS * 86400 - (_now() - event_started))
 
+func _reset_event_progress() -> void:
+	event_completed_stages = []
+	event_stars = {}
+	event_hunt_coins = 0
+	event_hunt_thresholds = 0
+	shared_choice = ""
+	shared_my_harvests = 0
+	shared_friend_harvests = 0
+	shared_goal_paid = false
+	shared_gift_day = 0
+
 func is_event_stage_open(stage: int) -> bool:
+	# Lowy: mozna grac dowolny etap, bo liczy sie suma monet.
+	if current_event().get("coin_hunt", false):
+		return true
 	return stage == 0 or event_completed_stages.has(stage - 1)
 
-func start_event_game(stage: int) -> void:
-	var level_idx: int = current_event()["stages"][stage]["level_idx"]
+# Przygotowuje etap. Pomoc pobiera roslimonety; bez nich etap nie startuje.
+func start_event_game(stage: int, with_help := false) -> bool:
+	var event := current_event()
+	if with_help:
+		var cost: int = event["help"]["cost"]
+		if plant_coins < cost:
+			return false
+		plant_coins -= cost
+		save_progress()
+	event_help_active = with_help
 	event_stage = stage
-	current_level_index = level_idx
+	current_level_index = EventData.STAGES[stage]["level_idx"]
 	current_loadout = []
-	event_level = LevelData.LEVELS[level_idx].duplicate(true)
-	event_level["name"] = "%s - etap %d" % [current_event()["name"], stage + 1]
+	event_level = LevelData.event_level(event, stage)
+	if event.get("forced_deck", false):
+		event_forced_plants = _random_forced_deck(stage)
+	return true
+
+# Narzucona talia: zawsze zrodlo wody (na trudniejszych etapach takze
+# Megakaktus) i 2 losowe rosliny, bez Pnaczy, ktore nie zawsze maja na czym rosnac.
+func _random_forced_deck(stage: int) -> Array:
+	var water_plants := []
+	var others := []
+	for i in range(PlantData.TYPES.size()):
+		var role: String = PlantData.TYPES[i]["role"]
+		if role == "generator":
+			if PlantData.TYPES[i]["cost"] <= 25 or stage >= 3:
+				water_plants.append(i)
+		elif role != "vines":
+			others.append(i)
+	others.shuffle()
+	var deck := [water_plants.pick_random(), others[0], others[1]]
+	deck.sort()
+	return deck
 
 func is_event_game() -> bool:
 	return not event_level.is_empty()
@@ -302,15 +360,97 @@ func is_event_game() -> bool:
 func clear_event_game() -> void:
 	event_level = {}
 
-# Wygrany etap: sadzonki (za powtorke mniej). Zwraca ich liczbe.
-func complete_event_stage() -> int:
+# Wygrany etap: nagroda zalezna od wydarzenia. Zwraca {"saplings", "rubies"}.
+# stars: gwiazdki z Wyscigu (0 w innych wydarzeniach).
+func complete_event_stage(stars := 0) -> Dictionary:
+	var event := current_event()
 	var first_win: bool = not event_completed_stages.has(event_stage)
-	var reward: int = current_event()["stages"][event_stage]["saplings"] if first_win else EventData.REPLAY_SAPLINGS
+	var reward := {"saplings": 0, "rubies": 0}
 	if first_win:
 		event_completed_stages.append(event_stage)
-	saplings += reward
+	if event.get("coin_hunt", false):
+		pass
+	elif event.get("time_race", false):
+		# Sadzonki tylko za nowe gwiazdki: po pierwszej w etapie, za kazda kolejna.
+		var best: int = event_stars.get(str(event_stage), 0)
+		reward["saplings"] = max(0, stars - best)
+		event_stars[str(event_stage)] = max(best, stars)
+	else:
+		reward["saplings"] = EventData.STAGES[event_stage]["saplings"] if first_win else EventData.REPLAY_SAPLINGS
+	if first_win and event_stage == EventData.STAGES.size() - 1:
+		reward["rubies"] = event.get("final_rubies", 0)
+	saplings += reward["saplings"]
+	rubies += reward["rubies"]
 	save_progress()
 	return reward
+
+# Moneta z Low: trafia do roslimonet i do sumy tygodnia. Zwraca liczbe sadzonek
+# za progi osiagniete ta moneta.
+func add_hunt_coins(amount: int) -> int:
+	plant_coins += amount
+	event_hunt_coins += amount
+	var gained := 0
+	while event_hunt_thresholds < EventData.HUNT_THRESHOLDS.size():
+		var threshold: Dictionary = EventData.HUNT_THRESHOLDS[event_hunt_thresholds]
+		if event_hunt_coins < threshold["coins"]:
+			break
+		gained += threshold["saplings"]
+		event_hunt_thresholds += 1
+	saplings += gained
+	save_progress()
+	return gained
+
+func spend_coins(amount: int) -> bool:
+	if plant_coins < amount:
+		return false
+	plant_coins -= amount
+	save_progress()
+	return true
+
+# --- Sadzenie razem (opcja w tygodniu Low) ---
+func is_shared_garden_offered() -> bool:
+	return current_event().get("shared_garden", false)
+
+func is_shared_garden_on() -> bool:
+	return is_shared_garden_offered() and shared_choice == "yes"
+
+func set_shared_choice(accepted: bool) -> void:
+	shared_choice = "yes" if accepted else "no"
+	save_progress()
+
+func _today() -> int:
+	return _now() / 86400
+
+func is_free_gift_ready() -> bool:
+	return shared_gift_day != _today()
+
+# Sadzonka dla znajomego: pierwsza danego dnia za darmo, kolejne za roslimonety.
+func pay_for_gift() -> bool:
+	if is_free_gift_ready():
+		shared_gift_day = _today()
+		save_progress()
+		return true
+	return spend_coins(EventData.GIFT_COST)
+
+func receive_gift() -> void:
+	saplings += 1
+	save_progress()
+
+func set_friend_harvests(count: int) -> void:
+	shared_friend_harvests = max(shared_friend_harvests, count)
+	save_progress()
+
+func shared_total_harvests() -> int:
+	return shared_my_harvests + shared_friend_harvests
+
+# Wspolny cel osiagniety: jednorazowa nagroda. Zwraca true, gdy wyplacono ja teraz.
+func try_pay_shared_goal() -> bool:
+	if shared_goal_paid or shared_total_harvests() < EventData.SHARED_GOAL_HARVESTS:
+		return false
+	shared_goal_paid = true
+	saplings += EventData.SHARED_REWARD_SAPLINGS
+	save_progress()
+	return true
 
 # --- Ogrod ---
 func plant_sapling(i: int) -> void:
@@ -362,6 +502,8 @@ func harvest_ready_plots() -> Array:
 		if garden_plots[i]["state"] == PLOT_GROWING and plot_seconds_left(i) == 0:
 			garden_plots[i] = {"state": PLOT_EMPTY, "end": 0}
 			plant_coins += GARDEN_HARVEST_COINS
+			if is_shared_garden_on():
+				shared_my_harvests += 1
 			harvested.append(i)
 	if not harvested.is_empty():
 		save_progress()
@@ -596,6 +738,14 @@ func save_progress() -> void:
 		"event_index": event_index,
 		"event_started": event_started,
 		"event_completed_stages": event_completed_stages,
+		"event_stars": event_stars,
+		"event_hunt_coins": event_hunt_coins,
+		"event_hunt_thresholds": event_hunt_thresholds,
+		"shared_choice": shared_choice,
+		"shared_my_harvests": shared_my_harvests,
+		"shared_friend_harvests": shared_friend_harvests,
+		"shared_goal_paid": shared_goal_paid,
+		"shared_gift_day": shared_gift_day,
 		"unlocked_icons": unlocked_icons,
 		"icon_unlock_steps": icon_unlock_steps,
 	}
@@ -688,6 +838,18 @@ func _load_v3_fields(parsed: Dictionary) -> void:
 	next_bee_time = _loaded_int(parsed, "next_bee_time")
 	event_index = _loaded_int(parsed, "event_index")
 	event_started = _loaded_int(parsed, "event_started")
+	event_hunt_coins = _loaded_int(parsed, "event_hunt_coins")
+	event_hunt_thresholds = _loaded_int(parsed, "event_hunt_thresholds")
+	shared_my_harvests = _loaded_int(parsed, "shared_my_harvests")
+	shared_friend_harvests = _loaded_int(parsed, "shared_friend_harvests")
+	shared_gift_day = _loaded_int(parsed, "shared_gift_day")
+	shared_goal_paid = bool(parsed.get("shared_goal_paid", false))
+	shared_choice = str(parsed.get("shared_choice", ""))
+	var loaded_stars = parsed.get("event_stars", {})
+	if loaded_stars is Dictionary:
+		for key in loaded_stars.keys():
+			if typeof(loaded_stars[key]) == TYPE_FLOAT or typeof(loaded_stars[key]) == TYPE_INT:
+				event_stars[str(key)] = int(loaded_stars[key])
 	var loaded_stages = parsed.get("event_completed_stages", [])
 	if loaded_stages is Array:
 		for v in loaded_stages:
