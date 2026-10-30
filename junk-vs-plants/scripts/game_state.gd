@@ -43,6 +43,13 @@ var endless_ruby_awarded := false
 # Rosliny z unlock_level 1 sa dostepne od startu i nie trzeba ich odbierac.
 var claimed_plants: Array = []
 
+# Ikonki roslin (notatki 2026-10-30): dwie startowe sa dostepne od razu, kolejne
+# zablokowane, dopoki gracz nie odblokuje rosliny, a potem trzeba je odblokowac
+# w kilku krokach. unlocked_icons to indeksy w PlantData.TYPES,
+# icon_unlock_steps: String(indeks) -> wykonane kroki.
+var unlocked_icons: Array = []
+var icon_unlock_steps: Dictionary = {}
+
 # Konta: lista {"id": String, "name": String, "icon": int}. Nazwa i ikona
 # (indeks rosliny w PlantData.TYPES) sa trzymane tutaj, a nie w pliku
 # postepu, zeby ekran wyboru konta nie musial wczytywac wszystkich zapisow.
@@ -72,6 +79,8 @@ func _reset_progress() -> void:
 	rubies = 0
 	endless_ruby_awarded = false
 	claimed_plants = []
+	unlocked_icons = []
+	icon_unlock_steps = {}
 	player_name = DEFAULT_PLAYER_NAME
 	player_icon = 0
 
@@ -170,6 +179,10 @@ func select_profile(id: String) -> void:
 			player_name = p["name"]
 			player_icon = p["icon"]
 			load_progress()
+			# Konta sprzed blokady ikonek zachowuja ikone, ktora juz wybraly.
+			if not is_icon_unlocked(player_icon):
+				unlocked_icons.append(player_icon)
+				save_progress()
 			return
 
 # Poziom jest otwarty, gdy poprzedni zostal ukonczony i gracz odebral
@@ -212,6 +225,41 @@ func claim_plant(plant_idx: int) -> void:
 		return
 	claimed_plants.append(plant_idx)
 	save_progress()
+
+func is_icon_unlocked(icon_idx: int) -> bool:
+	return PlantData.TYPES[icon_idx].get("unlock_level", 1) <= 1 or unlocked_icons.has(icon_idx)
+
+# Ile krokow kosztuje ikonka - im pozniejsza roslina, tym wiecej.
+func icon_steps_required(plant_idx: int) -> int:
+	var unlock_level: int = PlantData.TYPES[plant_idx].get("unlock_level", 1)
+	if unlock_level <= 5:
+		return 2
+	return 3 if unlock_level <= 15 else 5
+
+func icon_steps_done(plant_idx: int) -> int:
+	return icon_unlock_steps.get(str(plant_idx), 0)
+
+# Zalicza krok; ostatni wymagany odblokowuje ikonke. Ikonki rosliny, ktorej
+# gracz jeszcze nie ma, nie da sie odblokowac.
+func record_icon_step(plant_idx: int) -> void:
+	if not is_plant_unlocked(plant_idx) or is_icon_unlocked(plant_idx):
+		return
+	var done := icon_steps_done(plant_idx) + 1
+	if done >= icon_steps_required(plant_idx):
+		unlocked_icons.append(plant_idx)
+		icon_unlock_steps.erase(str(plant_idx))
+	else:
+		icon_unlock_steps[str(plant_idx)] = done
+	save_progress()
+
+# Poziom gry zespolowej: najdalszy otwarty poziom zapraszajacego (bez trybu
+# nieskonczonego).
+func team_level_index() -> int:
+	var best := 0
+	for i in range(LevelData.LEVELS.size()):
+		if is_level_unlocked(i) and not is_endless_level(i):
+			best = i
+	return best
 
 func unlocked_plant_indices() -> Array:
 	var result := []
@@ -263,7 +311,7 @@ func set_player(new_name: String, icon_idx: int) -> bool:
 	if is_profile_name_taken(new_name, current_profile_id):
 		return false
 	player_name = _clean_name(new_name)
-	if is_plant_unlocked(icon_idx):
+	if is_icon_unlocked(icon_idx):
 		player_icon = icon_idx
 	for p in profiles:
 		if p["id"] == current_profile_id:
@@ -296,6 +344,8 @@ func save_progress() -> void:
 		"ruby_levels": ruby_levels,
 		"endless_ruby_awarded": endless_ruby_awarded,
 		"claimed_plants": claimed_plants,
+		"unlocked_icons": unlocked_icons,
+		"icon_unlock_steps": icon_unlock_steps,
 	}
 	var file := FileAccess.open(_save_path(), FileAccess.WRITE)
 	if file:
@@ -369,6 +419,22 @@ func _load_v3_fields(parsed: Dictionary) -> void:
 			var idx := int(v)
 			if idx >= 0 and idx < PlantData.TYPES.size() and not claimed_plants.has(idx):
 				claimed_plants.append(idx)
+
+	var loaded_icons = parsed.get("unlocked_icons", [])
+	if loaded_icons is Array:
+		for v in loaded_icons:
+			if typeof(v) != TYPE_FLOAT and typeof(v) != TYPE_INT:
+				continue
+			var idx := int(v)
+			if idx >= 0 and idx < PlantData.TYPES.size() and not unlocked_icons.has(idx):
+				unlocked_icons.append(idx)
+
+	var loaded_steps = parsed.get("icon_unlock_steps", {})
+	if loaded_steps is Dictionary:
+		for key in loaded_steps.keys():
+			var count = loaded_steps[key]
+			if typeof(count) == TYPE_FLOAT or typeof(count) == TYPE_INT:
+				icon_unlock_steps[str(key)] = max(0, int(count))
 
 # Zapis sprzed wersji 3 nie zna rubinow ani odbierania roslin: rosliny, ktore
 # wg starej zasady byly juz odblokowane (poziom przed nimi ukonczony), uznajemy

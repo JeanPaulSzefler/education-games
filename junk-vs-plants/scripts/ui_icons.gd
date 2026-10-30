@@ -10,6 +10,15 @@ const RUBY_COLOR := Color(0.85, 0.1, 0.3)
 const RUBY_LIGHT_COLOR := Color(1.0, 0.45, 0.6)
 const RUBY_DARK_COLOR := Color(0.55, 0.04, 0.18)
 
+const GRAY_SHADER_CODE := """
+shader_type canvas_item;
+void fragment() {
+	vec4 tex = texture(TEXTURE, UV);
+	float gray = dot(tex.rgb, vec3(0.3, 0.59, 0.11));
+	COLOR = vec4(vec3(gray), tex.a);
+}
+"""
+
 static func _box(size: float) -> Control:
 	var c := Control.new()
 	c.size = Vector2(size, size)
@@ -112,3 +121,22 @@ static func plant_icon(plant_idx: int, icon_size: float) -> TextureRect:
 	icon.custom_minimum_size = Vector2(icon_size, icon_size)
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return icon
+
+# Ta sama ikona bez koloru - roslina odblokowana, ale jej ikonka gracza jeszcze nie.
+static func plant_icon_gray(plant_idx: int, icon_size: float) -> TextureRect:
+	var icon := plant_icon(plant_idx, icon_size)
+	var shader := Shader.new()
+	shader.code = GRAY_SHADER_CODE
+	var material := ShaderMaterial.new()
+	material.shader = shader
+	icon.material = material
+	return icon
+
+# Klodka (ikonka rosliny, ktorej gracz jeszcze nie odblokowal).
+static func padlock(size: float) -> Control:
+	var c := _box(size)
+	_line(c, size, [Vector2(0.3, 0.46), Vector2(0.3, 0.28), Vector2(0.4, 0.14), Vector2(0.6, 0.14),
+		Vector2(0.7, 0.28), Vector2(0.7, 0.46)], Color(0.3, 0.3, 0.32), max(3.0, size * 0.09))
+	_poly(c, size, [Vector2(0.16, 0.44), Vector2(0.84, 0.44), Vector2(0.84, 0.92), Vector2(0.16, 0.92)], Color(0.85, 0.65, 0.2))
+	_poly(c, size, [Vector2(0.44, 0.58), Vector2(0.56, 0.58), Vector2(0.56, 0.78), Vector2(0.44, 0.78)], Color(0.3, 0.22, 0.1))
+	return c

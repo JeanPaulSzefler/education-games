@@ -22,6 +22,7 @@ config/icon="res://icon.png"
 [autoload]
 
 GameState="*res://scripts/game_state.gd"
+NetSession="*res://scripts/net_session.gd"
 
 [display]
 

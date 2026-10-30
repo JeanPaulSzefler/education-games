@@ -26,6 +26,7 @@ const POPUP_TEXT_COLOR := Color(0.15, 0.12, 0.1)
 const CORNER_BTN_COLOR := Color(0.3, 0.45, 0.25)
 const OK_BTN_COLOR := Color(0.25, 0.6, 0.25)
 const SELECTED_ICON_BORDER := Color(0.95, 0.75, 0.1)
+const GREETING_SECONDS := 3.0
 const DELETE_BTN_COLOR := Color(0.75, 0.18, 0.15)
 # Ikonka "Moich roslinek" - Lisc Bananowca (indeks w PlantData.TYPES).
 const MY_PLANTS_ICON_PLANT := 2
@@ -101,6 +102,10 @@ func _ready() -> void:
 	var start_offset: float = VIEWPORT_WIDTH / 2.0 - x_current
 	path_layer.position.x = clamp(start_offset, min_offset, max_offset)
 	_update_arrow_visibility()
+
+	# Np. znajomy wyszedl z gry zespolowej, zanim sie zaczela.
+	if NetSession.notice != "":
+		_show_net_notice()
 
 # --- Budowa sekwencji wezlow: P1, P2, [Lisc], P3, P4, [Mroz], ... ---
 func _build_node_sequence() -> void:
@@ -750,17 +755,20 @@ func _show_shop() -> void:
 	info.add_theme_color_override("font_color", Color(0.5, 0.3, 0.2))
 	panel.add_child(info)
 
-# Zmiana nazwy i ikony gracza (do wyboru odblokowane rosliny).
-func _show_player_edit() -> void:
-	var panel := _open_popup(Vector2(760, 470), "Gracz")
-	var chosen := {"icon": GameState.player_icon}
+# Zmiana nazwy i ikony gracza. Ikonka roslinki ma trzy stany: klodka (roslina
+# jeszcze zablokowana), szara (do odblokowania w kilku krokach) i kolorowa (do
+# wyboru; dwie startowe sa kolorowe od razu).
+# draft_* przechowuja niezapisane zmiany na czas okienka odblokowania ikonki.
+func _show_player_edit(draft_name := GameState.player_name, draft_icon := GameState.player_icon) -> void:
+	var panel := _open_popup(Vector2(1000, 470), "Gracz")
+	var chosen := {"icon": draft_icon}
 
 	var name_caption := _popup_label("Nazwa:", 22)
 	name_caption.position = Vector2(40, 86)
 	panel.add_child(name_caption)
 
 	var name_edit := LineEdit.new()
-	name_edit.text = GameState.player_name
+	name_edit.text = draft_name
 	name_edit.max_length = GameState.PLAYER_NAME_MAX_LENGTH
 	name_edit.position = Vector2(150, 76)
 	name_edit.size = Vector2(400, 52)
@@ -780,24 +788,40 @@ func _show_player_edit() -> void:
 
 	# p_idx -> StyleBoxFlat, zeby po wyborze przelaczyc zlota ramke.
 	var icon_styles := {}
-	for p_idx in GameState.unlocked_plant_indices():
+	for p_idx in range(PlantData.TYPES.size()):
 		var btn := Button.new()
 		btn.custom_minimum_size = Vector2(80, 80)
 		btn.focus_mode = Control.FOCUS_NONE
-		var sb := UiIcons.round_style(Color(0.55, 0.8, 0.4), 14)
-		sb.set_border_width_all(5)
-		sb.border_color = SELECTED_ICON_BORDER if p_idx == chosen["icon"] else sb.bg_color
-		for state in ["normal", "hover", "pressed"]:
-			btn.add_theme_stylebox_override(state, sb)
-		icon_styles[p_idx] = sb
-		var icon := UiIcons.plant_icon(p_idx, 64)
+		icons_box.add_child(btn)
+		var icon: Control
+		if GameState.is_icon_unlocked(p_idx):
+			var sb := UiIcons.round_style(Color(0.55, 0.8, 0.4), 14)
+			sb.set_border_width_all(5)
+			sb.border_color = SELECTED_ICON_BORDER if p_idx == chosen["icon"] else sb.bg_color
+			for state in ["normal", "hover", "pressed"]:
+				btn.add_theme_stylebox_override(state, sb)
+			icon_styles[p_idx] = sb
+			icon = UiIcons.plant_icon(p_idx, 64)
+			btn.pressed.connect(func():
+				chosen["icon"] = p_idx
+				for key in icon_styles.keys():
+					icon_styles[key].border_color = SELECTED_ICON_BORDER if key == p_idx else icon_styles[key].bg_color)
+		elif GameState.is_plant_unlocked(p_idx):
+			UiIcons.style_button(btn, Color(0.7, 0.7, 0.68), 14)
+			icon = UiIcons.plant_icon_gray(p_idx, 64)
+			btn.pressed.connect(func(): _show_icon_unlock(p_idx, name_edit.text, chosen["icon"]))
+		else:
+			UiIcons.style_button(btn, Color(0.5, 0.5, 0.5), 14)
+			btn.disabled = true
+			icon = UiIcons.padlock(64)
 		icon.position = Vector2(8, 8)
 		btn.add_child(icon)
-		icons_box.add_child(btn)
-		btn.pressed.connect(func():
-			chosen["icon"] = p_idx
-			for key in icon_styles.keys():
-				icon_styles[key].border_color = SELECTED_ICON_BORDER if key == p_idx else icon_styles[key].bg_color)
+
+	var icons_hint := _popup_label("Szara ikonka: tapnij, zeby ja odblokowac. Klodka: najpierw zdobadz te roslinke.", 18)
+	icons_hint.position = Vector2(40, 344)
+	icons_hint.size = Vector2(panel.size.x - 80, 26)
+	icons_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	panel.add_child(icons_hint)
 
 	var error_label := _popup_label("", 18)
 	error_label.position = Vector2(150, 130)
@@ -813,6 +837,10 @@ func _show_player_edit() -> void:
 	delete_btn.pressed.connect(_show_delete_confirm)
 	panel.add_child(delete_btn)
 
+	var team_btn := _popup_button("Gra zespolowa", Color(0.3, 0.5, 0.75), Vector2(500, panel.size.y - 96), Vector2(230, 70))
+	team_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/TeamPlay.tscn"))
+	panel.add_child(team_btn)
+
 	var save_btn := _popup_button("Zapisz", OK_BTN_COLOR, Vector2(panel.size.x - 260, panel.size.y - 96), Vector2(220, 70))
 	save_btn.pressed.connect(func():
 		if GameState.set_player(name_edit.text, chosen["icon"]):
@@ -820,6 +848,61 @@ func _show_player_edit() -> void:
 		else:
 			error_label.text = "Konto o tej nazwie juz istnieje.")
 	panel.add_child(save_btn)
+
+# Odblokowanie ikonki: szara ikona, postep i przycisk kolejnego kroku. Po
+# ostatnim kroku ikonka staje sie kolorowa i od razu jest wybrana.
+func _show_icon_unlock(plant_idx: int, draft_name: String, draft_icon: int) -> void:
+	var panel := _open_popup(Vector2(600, 500), "Odblokuj ikonke", false)
+
+	var icon := UiIcons.plant_icon_gray(plant_idx, 180)
+	icon.position = Vector2((panel.size.x - 180) / 2.0, 70)
+	panel.add_child(icon)
+
+	var name_label := _popup_label(PlantData.TYPES[plant_idx]["name"], 28)
+	name_label.position = Vector2(0, 256)
+	name_label.size = Vector2(panel.size.x, 40)
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	panel.add_child(name_label)
+
+	var progress := _popup_label("Postep: %d / %d" % [GameState.icon_steps_done(plant_idx), GameState.icon_steps_required(plant_idx)], 22)
+	progress.position = Vector2(0, 302)
+	progress.size = Vector2(panel.size.x, 34)
+	progress.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	panel.add_child(progress)
+
+	var back_btn := _popup_button("Wroc", CORNER_BTN_COLOR, Vector2(40, panel.size.y - 100), Vector2(190, 70))
+	back_btn.pressed.connect(func(): _show_player_edit(draft_name, draft_icon))
+	panel.add_child(back_btn)
+
+	var step_btn := _popup_button("Odblokowuj", OK_BTN_COLOR, Vector2(panel.size.x - 330, panel.size.y - 100), Vector2(290, 70))
+	step_btn.pressed.connect(func():
+		_show_greeting(func():
+			GameState.record_icon_step(plant_idx)
+			if GameState.is_icon_unlocked(plant_idx):
+				_show_player_edit(draft_name, plant_idx)
+			else:
+				_show_icon_unlock(plant_idx, draft_name, draft_icon)))
+	panel.add_child(step_btn)
+
+# Zamiast reklam: napis "dobrego dnia!" przez chwile na ekranie.
+func _show_greeting(on_finished: Callable) -> void:
+	var panel := _open_popup(Vector2(640, 240), "", false)
+	var greeting := _popup_label("dobrego dnia!", 48)
+	greeting.size = panel.size
+	greeting.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	greeting.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	panel.add_child(greeting)
+	popup.create_tween().tween_callback(on_finished).set_delay(GREETING_SECONDS)
+
+func _show_net_notice() -> void:
+	var panel := _open_popup(Vector2(640, 220), "Gra zespolowa")
+	var info := _popup_label(NetSession.notice, 22)
+	info.position = Vector2(40, 90)
+	info.size = Vector2(panel.size.x - 80, 90)
+	info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	panel.add_child(info)
+	NetSession.notice = ""
 
 # "Czy na pewno?" przed usunieciem wybranego konta - postep znika na zawsze.
 func _show_delete_confirm() -> void:

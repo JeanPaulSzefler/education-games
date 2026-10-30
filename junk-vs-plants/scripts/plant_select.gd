@@ -99,6 +99,10 @@ func _ready() -> void:
 	add_child(play_button)
 	play_button.disabled = selected.is_empty()
 
+	if NetSession.active:
+		NetSession.game_starting.connect(_start_game)
+		NetSession.session_lost.connect(_on_back_pressed)
+
 func _build_grid() -> void:
 	card_refs.clear()
 	var total_width := CARDS_PER_ROW * CARD_SIZE.x + (CARDS_PER_ROW - 1) * CARD_GAP.x
@@ -229,6 +233,7 @@ func _update_counter() -> void:
 		play_button.disabled = selected.is_empty()
 
 func _on_back_pressed() -> void:
+	NetSession.end_session()
 	get_tree().change_scene_to_file("res://scenes/LevelSelect.tscn")
 
 func _on_play_pressed() -> void:
@@ -240,4 +245,13 @@ func _on_play_pressed() -> void:
 			ordered.append(i)
 	GameState.current_loadout = ordered
 	GameState.set_loadout(GameState.current_level_index, ordered)
+	if NetSession.active:
+		# Gra zespolowa rusza dopiero, gdy obaj gracze wybiora rosliny.
+		play_button.disabled = true
+		message_label.text = "Czekam na znajomego..."
+		NetSession.mark_ready()
+		return
+	_start_game()
+
+func _start_game() -> void:
 	get_tree().change_scene_to_file("res://scenes/Main.tscn")

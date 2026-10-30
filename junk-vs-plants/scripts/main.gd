@@ -127,6 +127,13 @@ const MAX_FIRST_WAVE_ENEMIES := 4
 const SPAWN_INTERVAL := 1.1
 const BETWEEN_WAVES_TIME := 5.0
 
+# --- Gra zespolowa: wiecej wrogow (ulamek wielkosci fali), wiecej wody na start
+# (woda jest wspolna), a host wysyla stan planszy tyle razy na sekunde. ---
+const TEAM_EXTRA_ENEMIES := 0.5
+const TEAM_START_WATER := 150
+const TEAM_SNAPSHOT_INTERVAL := 1.0 / 15.0
+const TEAM_VIEW_SMOOTHING := 20.0
+
 # --- Tryb nieskonczony: trudnosc rosnie z czasem przetrwanym przez gracza
 # (w minutach, patrz _endless_difficulty()). ---
 const ENDLESS_FIRST_WAVE_SIZES := [2, 3]   # fale 1 i 2 celowo male
@@ -199,7 +206,19 @@ var boss_bar_fg: ColorRect
 # ekranie przegranej (runda C, C7).
 var last_enemy_texture := ""
 
+# Gra zespolowa: symulacje liczy host; gosc (is_guest) tylko wysyla akcje i
+# rysuje to, co dostaje. net_views: klucz -> {"node", "target", pasek zycia...}.
+var team := false
+var is_guest := false
+var next_entity_id := 1
+var snapshot_timer := 0.0
+var net_views := {}
+
 func _ready() -> void:
+	team = NetSession.active
+	is_guest = team and not NetSession.is_host
+	if team:
+		water = TEAM_START_WATER
 	randomize()
 	PLANT_TYPES = PlantData.TYPES
 	BOSS_TYPES = BossData.TYPES
@@ -219,6 +238,8 @@ func _ready() -> void:
 	_build_fertilizer_tile()
 	_build_remove_button()
 	_update_hud()
+	if team:
+		_setup_team()
 
 func _current_level() -> Dictionary:
 	return LevelData.LEVELS[GameState.current_level_index]
@@ -456,6 +477,8 @@ func _build_top_buttons() -> void:
 	icon.position = Vector2(6, 6)
 	pause_btn.add_child(icon)
 	pause_btn.pressed.connect(_on_pause_pressed)
+	# W grze zespolowej nie ma pauzy - gra toczy sie u obu graczy naraz.
+	pause_btn.visible = not team
 
 	var exit_btn := _make_top_button(Vector2(right - PAUSE_BTN_WIDTH - TOP_BTN_GAP - EXIT_BTN_WIDTH, 2), Vector2(EXIT_BTN_WIDTH, TOP_BTN_HEIGHT))
 	exit_btn.text = "WYJSCIE"
@@ -570,7 +593,7 @@ func _open_pause_layer(shade: Color) -> CanvasLayer:
 	bg.mouse_filter = Control.MOUSE_FILTER_STOP
 	pause_layer.add_child(bg)
 
-	get_tree().paused = true
+	get_tree().paused = not team
 	return pause_layer
 
 func _close_pause_layer() -> void:
@@ -583,6 +606,7 @@ func _leave_to_level_select() -> void:
 	# W trybie nieskonczonym przerwana gra tez moze pobic rekord.
 	if endless:
 		GameState.submit_endless_score(kills)
+	NetSession.end_session()
 	get_tree().paused = false
 	get_tree().change_scene_to_file("res://scenes/LevelSelect.tscn")
 
@@ -624,6 +648,9 @@ func _on_tile_gui_input(event: InputEvent, col: int, row: int) -> void:
 		return
 	if not _is_tap_press(event):
 		return
+	if is_guest:
+		_guest_tile_tap(col, row)
+		return
 	if remove_mode:
 		_try_remove_plant(col, row)
 		return
@@ -643,32 +670,33 @@ func _try_place_plant(col: int, row: int) -> void:
 	if selected_plant_type < 0:
 		message_label.text = "Wybierz rosline z paska po lewej"
 		return
-	if blocked_cells.has(_cell_key(col, row)):
-		message_label.text = "Na tym polu nie mozna sadzic"
+	var error := _place_plant(selected_plant_type, col, row)
+	message_label.text = error
+	if error != "":
 		return
-	var pt = PLANT_TYPES[selected_plant_type]
+	plant_cooldowns[selected_plant_type] = PLANT_TYPES[selected_plant_type]["recharge"]
+	selected_plant_type = -1
+	_update_hud()
+
+# Sadzi rosline (u hosta, takze na prosbe goscia). Zwraca powod odmowy albo "".
+func _place_plant(type_idx: int, col: int, row: int) -> String:
+	if blocked_cells.has(_cell_key(col, row)):
+		return "Na tym polu nie mozna sadzic"
+	var pt = PLANT_TYPES[type_idx]
 	var pile = junk_piles.get(_cell_key(col, row))
 	if pt["role"] == "vines":
 		if pile == null:
-			message_label.text = "Pnacza sadzi sie tylko na kupkach smieci"
-			return
+			return "Pnacza sadzi sie tylko na kupkach smieci"
 	elif pile != null:
-		message_label.text = "Tu lezy kupka smieci - zestrzel ja albo posadz na niej Pnacza"
-		return
+		return "Tu lezy kupka smieci - zestrzel ja albo posadz na niej Pnacza"
 	if grid_occupancy[col][row] != null:
-		message_label.text = "To pole jest zajete"
-		return
+		return "To pole jest zajete"
 	if water < pt["cost"]:
-		message_label.text = "Za malo kropel wody"
-		return
+		return "Za malo kropel wody"
 	water -= pt["cost"]
-	plant_cooldowns[selected_plant_type] = pt["recharge"]
 	if pt["role"] == "vines":
 		_vines_destroy_pile(pile, pt["texture"])
-		message_label.text = ""
-		selected_plant_type = -1
-		_update_hud()
-		return
+		return ""
 	var node := _make_sprite(pt["texture"], CELL - 16)
 	node.position = Vector2(GRID_LEFT + col * CELL + 8, GRID_TOP + row * CELL + 8)
 	add_child(node)
@@ -681,8 +709,9 @@ func _try_place_plant(col: int, row: int) -> void:
 	node.add_child(ring)
 
 	var plant := {
+		"id": _new_entity_id(),
 		"node": node, "hp": pt["hp"], "max_hp": pt["hp"], "col": col, "row": row,
-		"type_idx": selected_plant_type, "atk_timer": 0.0,
+		"type_idx": type_idx, "atk_timer": 0.0,
 		"gen_timer": pt.get("water_interval", 0.0) * _cactus_water_multiplier(),
 		"bar": bar, "hurt_timer": HEALTH_BAR_HIDE_DELAY + 1.0,
 		"boost_ring": ring, "boosted": false, "boost_timer": 0.0,
@@ -694,22 +723,23 @@ func _try_place_plant(col: int, row: int) -> void:
 	}
 	plants.append(plant)
 	grid_occupancy[col][row] = plant
-	message_label.text = ""
-	selected_plant_type = -1
-	_update_hud()
+	return ""
 
 func _try_apply_fertilizer(col: int, row: int) -> void:
 	var plant = grid_occupancy[col][row]
 	if plant == null:
 		message_label.text = "Brak rosliny na tym polu"
 		return
-	fertilizer -= 1
+	_apply_fertilizer(plant)
 	fertilizer_mode = false
+	message_label.text = ""
+	_update_hud()
+
+func _apply_fertilizer(plant: Dictionary) -> void:
+	fertilizer -= 1
 	plant["boosted"] = true
 	plant["boost_timer"] = FERTILIZER_BOOST_DURATION
 	plant["boost_ring"].visible = true
-	message_label.text = ""
-	_update_hud()
 
 # Usuniecie wlasnej rosliny: znika bez zwrotu kropel wody i bez nawozu.
 func _try_remove_plant(col: int, row: int) -> void:
@@ -758,6 +788,13 @@ func _update_hud() -> void:
 func _process(delta: float) -> void:
 	if game_over:
 		return
+	if is_guest:
+		_update_cooldowns(delta)
+		_update_guest_view(delta)
+		return
+	# Host nie zaczyna, dopoki gosc nie wczyta planszy.
+	if team and not NetSession.guest_in_game:
+		return
 
 	if endless:
 		endless_time += delta
@@ -774,6 +811,8 @@ func _process(delta: float) -> void:
 	_update_fertilizer_drops(delta)
 	_update_health_bars(delta)
 	_check_win_condition()
+	if team and not game_over:
+		_update_snapshot(delta)
 
 # --- Odnawianie roslin w pasku (jak w PvZ): cien zakrywa kafelek i kurczy
 # sie ku gorze, az roslina znow bedzie gotowa do posadzenia. ---
@@ -802,14 +841,16 @@ func _update_wave_spawning(delta: float) -> void:
 				wave_in_progress = true
 				wave_spawn_queue = waves[current_wave].duplicate()
 				if not endless and current_wave >= 2:
-					_add_extra_enemies(wave_spawn_queue)
+					_add_extra_enemies(wave_spawn_queue, EXTRA_ENEMIES_FROM_WAVE_3)
+				if team:
+					_add_extra_enemies(wave_spawn_queue, TEAM_EXTRA_ENEMIES)
 				if current_wave > 0 and _pile_appears_on_wave(current_wave):
 					_spawn_junk_pile()
 				_add_pile_enemies(wave_spawn_queue)
 				if current_wave == 0 and wave_spawn_queue.size() > MAX_FIRST_WAVE_ENEMIES:
 					wave_spawn_queue.resize(MAX_FIRST_WAVE_ENEMIES)
 				time_to_next_spawn = 0.0
-				message_label.text = "Fala %d nadchodzi!" % (current_wave + 1)
+				_announce("Fala %d nadchodzi!" % (current_wave + 1))
 			return
 
 		time_to_next_spawn -= delta
@@ -817,7 +858,7 @@ func _update_wave_spawning(delta: float) -> void:
 			var spawn_info = wave_spawn_queue.pop_front()
 			time_to_next_spawn = _spawn_interval()
 			if spawn_info.has("boss"):
-				message_label.text = "%s nadchodzi!" % BOSS_TYPES[spawn_info["boss"]]["name"]
+				_announce("%s nadchodzi!" % BOSS_TYPES[spawn_info["boss"]]["name"])
 				_spawn_boss(spawn_info["boss"], spawn_info["row"])
 			elif spawn_info.has("pile"):
 				# Kupka zniszczona, zanim wrog zdazyl wyjsc - nic nie wychodzi.
@@ -843,14 +884,14 @@ func _update_wave_spawning(delta: float) -> void:
 		between_waves_timer -= delta
 		if between_waves_timer <= 0.0:
 			boss_spawned = true
-			message_label.text = "%s nadchodzi!" % BOSS_TYPES[boss_idx]["name"]
+			_announce("%s nadchodzi!" % BOSS_TYPES[boss_idx]["name"])
 			_spawn_boss(boss_idx, ROWS / 2)
 
-# Zwykle poziomy, od 3. fali: dopisuje do kolejki kopie typow wrogow z tej
-# samej fali (w losowych rzedach), rozrzucone miedzy oryginalnych wrogow.
-func _add_extra_enemies(queue: Array) -> void:
+# Dopisuje do kolejki kopie typow wrogow z tej samej fali (ratio = ulamek jej
+# wielkosci, w losowych rzedach), rozrzucone miedzy oryginalnych wrogow.
+func _add_extra_enemies(queue: Array, ratio: float) -> void:
 	var originals := queue.duplicate()
-	var extra := int(ceil(originals.size() * EXTRA_ENEMIES_FROM_WAVE_3))
+	var extra := int(ceil(originals.size() * ratio))
 	for i in range(extra):
 		var src: Dictionary = originals[i % originals.size()]
 		var copy := {"type": src["type"], "row": randi_range(0, ROWS - 1)}
@@ -940,7 +981,7 @@ func _spawn_junk_pile() -> void:
 		"node": node, "hp": JUNK_PILE_HP, "max_hp": JUNK_PILE_HP,
 		"col": cell.x, "row": cell.y, "bar": bar, "hurt_timer": HEALTH_BAR_HIDE_DELAY + 1.0,
 	}
-	message_label.text = "Pojawila sie kupka smieci! Wychodza z niej szkodniki."
+	_announce("Pojawila sie kupka smieci! Wychodza z niej szkodniki.")
 
 # Kazda kupka wypuszcza na fale jednego slabego wroga (Butelke albo Puszke),
 # wstawionego w losowe miejsce kolejki.
@@ -1001,6 +1042,7 @@ func _spawn_enemy(type_idx: int, row: int, start_x: float = -1.0) -> void:
 	var bar := _add_health_bar(node, CELL - 16)
 	var hp := int(et["hp"] * _enemy_hp_multiplier())
 	enemies.append({
+		"id": _new_entity_id(),
 		"node": node, "hp": hp, "max_hp": hp, "row": row, "x": x, "type_idx": type_idx,
 		"speed": et["speed"] * _enemy_speed_multiplier(), "bite_dmg": et["bite_dmg"], "bite_interval": et["bite_interval"],
 		"bite_timer": 0.0, "bar": bar, "hurt_timer": HEALTH_BAR_HIDE_DELAY + 1.0,
@@ -1020,6 +1062,7 @@ func _spawn_boss(boss_idx: int, row: int) -> void:
 	add_child(node)
 	var bar := _add_health_bar(node, CELL - 4)
 	enemies.append({
+		"id": _new_entity_id(),
 		"node": node, "hp": hp, "max_hp": hp, "row": row, "x": x, "type_idx": -1,
 		"speed": bt["speed"] * _enemy_speed_multiplier(), "bite_dmg": bt["bite_dmg"], "bite_interval": bt["bite_interval"],
 		"bite_timer": 0.0, "bar": bar, "hurt_timer": HEALTH_BAR_HIDE_DELAY + 1.0,
@@ -1184,7 +1227,7 @@ func _spawn_projectile(row: int, x: float, dmg: float, pierce: bool = false, y_f
 	add_child(node)
 	var tw := node.create_tween()
 	tw.tween_property(node, "scale", Vector2(1, 1), 0.1)
-	projectiles.append({"node": node, "row": row, "x": x, "dmg": dmg, "pierce": pierce, "hit_enemies": [], "max_x": max_x})
+	projectiles.append({"id": _new_entity_id(), "node": node, "row": row, "x": x, "dmg": dmg, "pierce": pierce, "hit_enemies": [], "max_x": max_x})
 
 # Aronia: kilka pociskow naraz, rozlozonych od gory do dolu pola.
 func _spawn_volley(row: int, x: float, dmg: float, count: int, max_x: float) -> void:
@@ -1227,7 +1270,7 @@ func _spawn_homing_projectile(origin: Vector2, target: Dictionary, dmg: float) -
 	node.modulate = AIMED_PROJECTILE_COLOR
 	add_child(node)
 	var dir := (_enemy_center(target) - origin).normalized() if enemies.has(target) else Vector2.RIGHT
-	homing_projectiles.append({"node": node, "pos": origin, "dir": dir, "target": target, "dmg": dmg})
+	homing_projectiles.append({"id": _new_entity_id(), "node": node, "pos": origin, "dir": dir, "target": target, "dmg": dmg})
 
 func _enemy_center(e: Dictionary) -> Vector2:
 	return e["node"].position + e["node"].size / 2.0
@@ -1527,7 +1570,9 @@ func _make_flames(enemy_node: Control) -> CPUParticles2D:
 	return p
 
 func _trigger_gust(plant: Dictionary, pt: Dictionary) -> void:
-	_spawn_gust_cloud(plant)
+	_spawn_gust_cloud(plant["node"].position.x, plant["row"])
+	if team:
+		NetSession.send_event("gust", [plant["node"].position.x, plant["row"]])
 	var dead := []
 	for e in enemies:
 		if e["row"] == plant["row"]:
@@ -1544,9 +1589,8 @@ func _trigger_gust(plant: Dictionary, pt: Dictionary) -> void:
 # Przesuwajaca sie niebieska chmurka: startuje w polu rosliny i leci do
 # prawej krawedzi planszy w tym rzedzie, potem zanika. Sam efekt odrzutu
 # wrogow dzieje sie jak dotad, niezaleznie od animacji.
-func _spawn_gust_cloud(plant: Dictionary) -> void:
-	var start_x: float = plant["node"].position.x
-	var y: float = GRID_TOP + plant["row"] * CELL + CELL / 2.0
+func _spawn_gust_cloud(start_x: float, row: int) -> void:
+	var y: float = GRID_TOP + row * CELL + CELL / 2.0
 	var end_x: float = float(GRID_LEFT + COLS * CELL)
 
 	var cloud := Node2D.new()
@@ -1568,7 +1612,9 @@ func _spawn_gust_cloud(plant: Dictionary) -> void:
 	tw.tween_callback(cloud.queue_free)
 
 func _trigger_bomb(plant: Dictionary, pt: Dictionary) -> void:
-	_spawn_bomb_explosion(plant)
+	_spawn_bomb_explosion(plant["col"], plant["row"])
+	if team:
+		NetSession.send_event("bomb", [plant["col"], plant["row"]])
 	var blast_x := float(GRID_LEFT + plant["col"] * CELL)
 	var radius_cells: int = pt["blast_radius_cells"]
 	var dead := []
@@ -1588,10 +1634,10 @@ func _trigger_bomb(plant: Dictionary, pt: Dictionary) -> void:
 # Wybuch Bumorzecha: pomaranczowe kolko rosnie do ok. 3 pol srednicy z
 # zoltym srodkiem, jednoczesnie zanikajac, plus krotkie biale miegniecie
 # i lekkie potrzasniecie plansza.
-func _spawn_bomb_explosion(plant: Dictionary) -> void:
+func _spawn_bomb_explosion(col: int, row: int) -> void:
 	var center := Vector2(
-		GRID_LEFT + plant["col"] * CELL + CELL / 2.0,
-		GRID_TOP + plant["row"] * CELL + CELL / 2.0
+		GRID_LEFT + col * CELL + CELL / 2.0,
+		GRID_TOP + row * CELL + CELL / 2.0
 	)
 	var effect := Node2D.new()
 	effect.position = center
@@ -1724,6 +1770,7 @@ func _spawn_water_drop(origin: Vector2, value: int) -> void:
 
 	var angle := randf_range(0.0, TAU)
 	var drop := {
+		"id": _new_entity_id(),
 		"node": hit_area,
 		"visual": visual,
 		"vx": cos(angle) * WATER_DROP_SPEED,
@@ -1737,6 +1784,9 @@ func _spawn_water_drop(origin: Vector2, value: int) -> void:
 func _on_water_drop_gui_input(event: InputEvent, drop: Dictionary) -> void:
 	if not _is_tap_press(event):
 		return
+	_collect_water_drop(drop)
+
+func _collect_water_drop(drop: Dictionary) -> void:
 	if not water_drops.has(drop):
 		return
 	water += drop["value"]
@@ -1827,13 +1877,16 @@ func _spawn_fertilizer_drop(origin: Vector2) -> void:
 	visual.position = Vector2(visual_offset, visual_offset)
 	hit_area.add_child(visual)
 
-	var drop := {"node": hit_area, "vx": randf_range(-10.0, 10.0), "vy": randf_range(20.0, 34.0), "life": 6.0}
+	var drop := {"id": _new_entity_id(), "node": hit_area, "vx": randf_range(-10.0, 10.0), "vy": randf_range(20.0, 34.0), "life": 6.0}
 	hit_area.gui_input.connect(_on_fertilizer_drop_gui_input.bind(drop))
 	fertilizer_drops.append(drop)
 
 func _on_fertilizer_drop_gui_input(event: InputEvent, drop: Dictionary) -> void:
 	if not _is_tap_press(event):
 		return
+	_collect_fertilizer_drop(drop)
+
+func _collect_fertilizer_drop(drop: Dictionary) -> void:
 	if not fertilizer_drops.has(drop):
 		return
 	fertilizer += 1
@@ -1910,6 +1963,295 @@ func _make_sprite(texture_path: String, target_size: int) -> TextureRect:
 	node.pivot_offset = node.size / 2.0
 	return node
 
+# --- Gra zespolowa ---
+func _setup_team() -> void:
+	NetSession.session_lost.connect(_on_team_session_lost)
+	if is_guest:
+		NetSession.snapshot_received.connect(_apply_snapshot)
+		NetSession.event_received.connect(_on_team_event)
+		NetSession.action_error_received.connect(func(text: String): message_label.text = text)
+		NetSession.place_confirmed.connect(_on_place_confirmed)
+		NetSession.game_over_received.connect(_on_team_game_over)
+		NetSession.notify_guest_in_game()
+	else:
+		NetSession.action_received.connect(_on_guest_action)
+
+func _new_entity_id() -> int:
+	next_entity_id += 1
+	return next_entity_id
+
+# Komunikat o przebiegu gry (fale, bossowie) - widza go obaj gracze. Podpowiedzi
+# typu "To pole jest zajete" trafiaja tylko do gracza, ktory je wywolal.
+func _announce(text: String) -> void:
+	message_label.text = text
+	if team:
+		NetSession.send_event("message", [text])
+
+func _on_team_session_lost() -> void:
+	if game_over:
+		NetSession.notice = ""
+		return
+	game_over = true
+	_close_pause_layer()
+	_hide_top_buttons()
+	message_label.text = NetSession.notice
+	NetSession.notice = ""
+	_show_end_buttons()
+
+# --- Host: stan planszy dla goscia i wykonywanie jego akcji ---
+func _update_snapshot(delta: float) -> void:
+	snapshot_timer -= delta
+	if snapshot_timer <= 0.0:
+		snapshot_timer = TEAM_SNAPSHOT_INTERVAL
+		NetSession.send_snapshot(_build_snapshot())
+
+func _build_snapshot() -> Dictionary:
+	var enemy_rows := []
+	var boss := []
+	for e in enemies:
+		var kind: int = -1 - e["boss_type_idx"] if e["is_boss"] else e["type_idx"]
+		enemy_rows.append([e["id"], kind, e["node"].position, e["node"].rotation, e["hp"], e["max_hp"], e["node"].modulate])
+		if e["is_boss"] and boss.is_empty():
+			boss = [boss_name_label.text, float(e["hp"]) / float(e["max_hp"])]
+	var plant_rows := []
+	for p in plants:
+		plant_rows.append([p["id"], p["type_idx"], p["node"].position, p["hp"], p["max_hp"], p["boosted"]])
+	var shot_rows := []
+	for s in projectiles + homing_projectiles:
+		shot_rows.append([s["id"], s["node"].position, s["node"].rotation, s["node"].modulate, int(s["node"].size.x)])
+	var pile_rows := []
+	for pile in junk_piles.values():
+		pile_rows.append([_cell_key(pile["col"], pile["row"]), pile["node"].position, pile["hp"], pile["max_hp"]])
+	var water_rows := []
+	for d in water_drops:
+		water_rows.append([d["id"], d["node"].position, d["stolen_by"] != null])
+	var fertilizer_rows := []
+	for d in fertilizer_drops:
+		fertilizer_rows.append([d["id"], d["node"].position])
+	return {
+		"water": water, "fertilizer": fertilizer, "wave": current_wave, "boss": boss,
+		"enemies": enemy_rows, "plants": plant_rows, "shots": shot_rows, "piles": pile_rows,
+		"water_drops": water_rows, "fertilizer_drops": fertilizer_rows,
+	}
+
+func _on_guest_action(kind: String, args: Array) -> void:
+	if game_over:
+		return
+	match kind:
+		"place":
+			if _is_valid_cell(args, 1) and args[0] is int and args[0] >= 0 and args[0] < PLANT_TYPES.size():
+				var error := _place_plant(args[0], args[1], args[2])
+				if error == "":
+					NetSession.send_place_confirmed(args[0])
+				else:
+					NetSession.send_action_error(error)
+				_update_hud()
+		"remove":
+			if _is_valid_cell(args, 0):
+				if grid_occupancy[args[0]][args[1]] == null:
+					NetSession.send_action_error("Brak rosliny na tym polu")
+				else:
+					_remove_plant(grid_occupancy[args[0]][args[1]], false)
+		"fertilizer":
+			if _is_valid_cell(args, 0) and fertilizer > 0:
+				if grid_occupancy[args[0]][args[1]] == null:
+					NetSession.send_action_error("Brak rosliny na tym polu")
+				else:
+					_apply_fertilizer(grid_occupancy[args[0]][args[1]])
+					_update_hud()
+		"water":
+			for d in water_drops:
+				if not args.is_empty() and d["id"] == args[0]:
+					_collect_water_drop(d)
+					break
+		"fertilizer_drop":
+			for d in fertilizer_drops:
+				if not args.is_empty() and d["id"] == args[0]:
+					_collect_fertilizer_drop(d)
+					break
+
+func _is_valid_cell(args: Array, offset: int) -> bool:
+	if args.size() < offset + 2 or not (args[offset] is int) or not (args[offset + 1] is int):
+		return false
+	return args[offset] >= 0 and args[offset] < COLS and args[offset + 1] >= 0 and args[offset + 1] < ROWS
+
+# --- Gosc: akcje ida do hosta, a plansza jest rysowana ze stanu od niego ---
+func _guest_tile_tap(col: int, row: int) -> void:
+	if remove_mode:
+		NetSession.send_action("remove", [col, row])
+		remove_mode = false
+	elif fertilizer_mode:
+		NetSession.send_action("fertilizer", [col, row])
+		fertilizer_mode = false
+	elif selected_plant_type < 0:
+		message_label.text = "Wybierz rosline z paska po lewej"
+		return
+	else:
+		NetSession.send_action("place", [selected_plant_type, col, row])
+		selected_plant_type = -1
+	message_label.text = ""
+	_update_hud()
+
+func _on_place_confirmed(plant_idx: int) -> void:
+	plant_cooldowns[plant_idx] = PLANT_TYPES[plant_idx]["recharge"]
+
+func _on_team_event(kind: String, args: Array) -> void:
+	match kind:
+		"message":
+			message_label.text = args[0]
+		"bomb":
+			_spawn_bomb_explosion(args[0], args[1])
+		"gust":
+			_spawn_gust_cloud(args[0], args[1])
+
+func _on_team_game_over(won: bool, enemy_texture: String) -> void:
+	if won:
+		_win_game()
+	else:
+		if enemy_texture.begins_with("res://assets/"):
+			last_enemy_texture = enemy_texture
+		_lose_game()
+
+func _apply_snapshot(s: Dictionary) -> void:
+	if game_over:
+		return
+	var seen := {}
+	for row in s["enemies"]:
+		var key := "e%d" % row[0]
+		seen[key] = true
+		var view: Dictionary = net_views.get(key, {})
+		if view.is_empty():
+			view = _make_enemy_view(key, row[1], row[2])
+		view["target"] = row[2]
+		view["node"].rotation = row[3]
+		view["node"].modulate = row[6]
+		_update_view_hp(view, row[4], row[5])
+	for row in s["plants"]:
+		var key := "p%d" % row[0]
+		seen[key] = true
+		var view: Dictionary = net_views.get(key, {})
+		if view.is_empty():
+			view = _make_plant_view(key, row[1], row[2])
+		view["target"] = row[2]
+		view["ring"].visible = row[5]
+		_update_view_hp(view, row[3], row[4])
+	for row in s["shots"]:
+		var key := "s%d" % row[0]
+		seen[key] = true
+		var view: Dictionary = net_views.get(key, {})
+		if view.is_empty():
+			view = _add_view(key, _make_sprite(THORN_TEXTURE, row[4]), row[1])
+			view["node"].modulate = row[3]
+		view["target"] = row[1]
+		view["node"].rotation = row[2]
+	for row in s["piles"]:
+		var key := "j" + str(row[0])
+		seen[key] = true
+		var view: Dictionary = net_views.get(key, {})
+		if view.is_empty():
+			var node := _make_sprite(JUNK_PILE_TEXTURE, CELL - 16)
+			view = _add_view(key, node, row[1])
+			view["bar"] = _add_health_bar(node, CELL - 16)
+		_update_view_hp(view, row[2], row[3])
+	for row in s["water_drops"]:
+		var key := "w%d" % row[0]
+		seen[key] = true
+		var view: Dictionary = net_views.get(key, {})
+		if view.is_empty():
+			view = _make_drop_view(key, row[1], WATER_DROP_TEXTURE, WATER_DROP_VISUAL_SIZE, WATER_DROP_TAP_SIZE, "water", row[0])
+		view["target"] = row[1]
+		view["visual"].modulate = WATER_DROP_STOLEN_COLOR if row[2] else Color(1, 1, 1)
+	for row in s["fertilizer_drops"]:
+		var key := "f%d" % row[0]
+		seen[key] = true
+		var view: Dictionary = net_views.get(key, {})
+		if view.is_empty():
+			view = _make_drop_view(key, row[1], FERTILIZER_TEXTURE, FERTILIZER_VISUAL_SIZE, FERTILIZER_TAP_SIZE, "fertilizer_drop", row[0])
+		view["target"] = row[1]
+	for key in net_views.keys():
+		if not seen.has(key):
+			net_views[key]["node"].queue_free()
+			net_views.erase(key)
+
+	var hud_changed: bool = water != s["water"] or fertilizer != s["fertilizer"] or current_wave != s["wave"]
+	water = s["water"]
+	fertilizer = s["fertilizer"]
+	current_wave = s["wave"]
+	if hud_changed:
+		_update_hud()
+	_apply_boss_bar(s["boss"])
+
+func _add_view(key: String, node: Control, pos: Vector2) -> Dictionary:
+	node.position = pos
+	add_child(node)
+	var view := {"node": node, "target": pos}
+	net_views[key] = view
+	return view
+
+func _make_enemy_view(key: String, kind: int, pos: Vector2) -> Dictionary:
+	var is_boss := kind < 0
+	var texture: String = BOSS_TYPES[-1 - kind]["texture"] if is_boss else ENEMY_TYPES[kind]["texture"]
+	var size: int = CELL - 4 if is_boss else CELL - 16
+	var node := _make_sprite(texture, size)
+	var view := _add_view(key, node, pos)
+	view["bar"] = _add_health_bar(node, size)
+	return view
+
+func _make_plant_view(key: String, type_idx: int, pos: Vector2) -> Dictionary:
+	var node := _make_sprite(PLANT_TYPES[type_idx]["texture"], CELL - 16)
+	var view := _add_view(key, node, pos)
+	view["bar"] = _add_health_bar(node, CELL - 16)
+	var ring := _make_sprite(BOOST_RING_TEXTURE, CELL)
+	ring.position = Vector2(-8, -8)
+	node.add_child(ring)
+	view["ring"] = ring
+	return view
+
+# Kropla u goscia: po tapnieciu od razu znika, a host zbiera ja u siebie.
+func _make_drop_view(key: String, pos: Vector2, texture: String, visual_size: int, tap_size: int, action: String, id: int) -> Dictionary:
+	var hit_area := Control.new()
+	hit_area.size = Vector2(tap_size, tap_size)
+	hit_area.mouse_filter = Control.MOUSE_FILTER_STOP
+	var visual := _make_sprite(texture, visual_size)
+	visual.position = Vector2.ONE * (tap_size - visual_size) / 2.0
+	hit_area.add_child(visual)
+	hit_area.gui_input.connect(func(event: InputEvent):
+		if _is_tap_press(event) and hit_area.visible:
+			hit_area.visible = false
+			NetSession.send_action(action, [id]))
+	var view := _add_view(key, hit_area, pos)
+	view["visual"] = visual
+	return view
+
+# Pasek zycia rysujemy tak jak u hosta: pokazuje sie przy utracie HP.
+func _update_view_hp(view: Dictionary, hp: float, max_hp: float) -> void:
+	var hurt: bool = view.has("hp") and hp < view["hp"]
+	view["hp"] = hp
+	view["max_hp"] = max_hp
+	if not view.has("hurt_timer"):
+		view["hurt_timer"] = HEALTH_BAR_HIDE_DELAY + 1.0
+	if hurt:
+		_flash_health_bar(view)
+
+func _update_guest_view(delta: float) -> void:
+	var weight := 1.0 - exp(-TEAM_VIEW_SMOOTHING * delta)
+	for view in net_views.values():
+		view["node"].position = view["node"].position.lerp(view["target"], weight)
+		if view.has("hurt_timer"):
+			view["hurt_timer"] += delta
+			if view["hurt_timer"] > HEALTH_BAR_HIDE_DELAY:
+				view["bar"]["bg"].visible = false
+				view["bar"]["fg"].visible = false
+
+func _apply_boss_bar(boss: Array) -> void:
+	var alive := not boss.is_empty()
+	boss_name_label.visible = alive
+	boss_bar_bg.visible = alive
+	boss_bar_fg.visible = alive
+	if alive:
+		boss_name_label.text = boss[0]
+		boss_bar_fg.size.x = 300 * clampf(boss[1], 0.0, 1.0)
+
 # --- Koniec gry ---
 func _check_win_condition() -> void:
 	if endless:
@@ -1925,6 +2267,8 @@ func _check_win_condition() -> void:
 
 func _lose_game() -> void:
 	game_over = true
+	if team and not is_guest:
+		NetSession.send_game_over(false, last_enemy_texture)
 	_hide_top_buttons()
 	message_label.text = "PRZEGRANA - smieci dotarly do domu!"
 
@@ -1971,7 +2315,12 @@ func _win_game() -> void:
 	game_over = true
 	_hide_top_buttons()
 	message_label.text = "WYGRANA - obronles ogrod!"
-	GameState.complete_level(GameState.current_level_index)
+	# Gra zespolowa nie posuwa sciezki: gosc moze grac na poziomie, ktorego
+	# jeszcze nie ma otwartego.
+	if team and not is_guest:
+		NetSession.send_game_over(true, "")
+	if not team:
+		GameState.complete_level(GameState.current_level_index)
 
 	_spawn_confetti()
 
@@ -1986,7 +2335,7 @@ func _win_game() -> void:
 	add_child(win_label)
 
 	# Rubin tylko za pierwsze wygranie tego poziomu.
-	if GameState.award_level_ruby(GameState.current_level_index):
+	if not team and GameState.award_level_ruby(GameState.current_level_index):
 		_show_ruby_reward(Vector2(VIEWPORT_WIDTH / 2.0 - 70, VIEWPORT_HEIGHT / 2.0 - 10), 64, false)
 
 	var delay := get_tree().create_timer(1.5)
@@ -2068,6 +2417,14 @@ func _make_square_texture(size: int) -> ImageTexture:
 
 func _show_end_buttons() -> void:
 	var y := GRID_TOP + ROWS * CELL + 150
+	if team:
+		var back_btn := Button.new()
+		back_btn.text = "Wroc na sciezke"
+		back_btn.position = Vector2(GRID_LEFT, y)
+		back_btn.size = Vector2(250, 40)
+		back_btn.pressed.connect(_leave_to_level_select)
+		add_child(back_btn)
+		return
 	var retry_btn := Button.new()
 	retry_btn.text = "Zagraj ponownie"
 	retry_btn.position = Vector2(GRID_LEFT, y)
