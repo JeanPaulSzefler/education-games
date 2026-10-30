@@ -228,8 +228,10 @@ func _is_plant_allowed(plant_idx: int) -> bool:
 		return true
 	if banned_roles.has(PlantData.TYPES[plant_idx]["role"]):
 		return false
-	if not forced_plants.is_empty() and not GameState.event_help_active:
-		return false
+	# Narzucona talia: czwarta roslina moze byc dowolna, takze nieodblokowana,
+	# zeby nowy gracz nie zaplacil za pomoc, ktorej nie ma jak uzyc.
+	if not forced_plants.is_empty():
+		return GameState.event_help_active
 	return GameState.is_plant_unlocked(plant_idx)
 
 func _on_card_pressed(plant_idx: int) -> void:

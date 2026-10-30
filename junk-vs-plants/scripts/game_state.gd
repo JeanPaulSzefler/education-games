@@ -29,6 +29,9 @@ const TEAM_WIN_COINS := 50
 const FERTILIZER_START_LIMIT := 2
 const FERTILIZER_LIMIT_PRICES := [5, 6, 7, 8]
 
+# Oferta "za reklame" w sklepie: raz dziennie (notatki 2026-10-06).
+const AD_OFFER_RUBIES := 2
+
 # Ulepszenia roslin: kazdy z 10 poziomow to tylko +1,5% sily (razem +15%), a cena
 # rosnie od 10 do 28 rubinow. Cala sciezka daje ok. 75 rubinow, wiec ulepszenia
 # nie zastepuja planowania na planszy.
@@ -99,6 +102,8 @@ var opened_chests: Array = []
 var fertilizer_limit := FERTILIZER_START_LIMIT
 # Ulepszenia roslin: String(indeks rosliny) -> poziom.
 var plant_upgrades: Dictionary = {}
+# Dzien (Unix), w ktorym gracz ostatnio wzial rubiny z oferty "za reklame".
+var ad_offer_day := 0
 
 # Ogrod: sadzonki, pola {"state", "end" (czas Unix konca wzrostu)} i czas
 # powrotu pszczolki (0 = jeszcze nie ustalony).
@@ -178,6 +183,7 @@ func _reset_progress() -> void:
 	opened_chests = []
 	fertilizer_limit = FERTILIZER_START_LIMIT
 	plant_upgrades = {}
+	ad_offer_day = 0
 	saplings = 0
 	garden_plots = []
 	for i in range(GARDEN_PLOTS):
@@ -432,9 +438,14 @@ func is_event_stage_open(stage: int) -> bool:
 		return true
 	return stage == 0 or event_completed_stages.has(stage - 1)
 
-# Przygotowuje etap. Pomoc pobiera roslimonety; bez nich etap nie startuje.
+# Przygotowuje etap. Pomoc pobiera roslimonety; bez nich etap nie startuje. Nie
+# startuje tez, gdy wydarzenie wlasnie sie skonczylo (zwraca false).
 func start_event_game(stage: int, with_help := false) -> bool:
+	var event_before := current_event()
+	refresh_event()
 	var event := current_event()
+	if event.is_empty() or event["id"] != event_before.get("id"):
+		return false
 	if with_help:
 		if event_help_prepaid:
 			event_help_prepaid = false
@@ -521,6 +532,17 @@ func spend_coins(amount: int) -> bool:
 	return true
 
 # --- Zakupy w sklepie ---
+func is_ad_offer_ready() -> bool:
+	return ad_offer_day != _today()
+
+func claim_ad_offer() -> bool:
+	if not is_ad_offer_ready():
+		return false
+	ad_offer_day = _today()
+	rubies += AD_OFFER_RUBIES
+	save_progress()
+	return true
+
 # Pomoc na nastepny etap biezacego wydarzenia, kupiona na zapas.
 func buy_event_help() -> bool:
 	var event := current_event()
@@ -918,6 +940,7 @@ func save_progress() -> void:
 		"opened_chests": opened_chests,
 		"fertilizer_limit": fertilizer_limit,
 		"plant_upgrades": plant_upgrades,
+		"ad_offer_day": ad_offer_day,
 		"event_help_prepaid": event_help_prepaid,
 		"event_swap_credits": event_swap_credits,
 		"shared_gift_credits": shared_gift_credits,
@@ -1035,6 +1058,7 @@ func _load_v3_fields(parsed: Dictionary) -> void:
 	shared_gift_day = _loaded_int(parsed, "shared_gift_day")
 	shared_goal_paid = bool(parsed.get("shared_goal_paid", false))
 	shared_choice = str(parsed.get("shared_choice", ""))
+	ad_offer_day = _loaded_int(parsed, "ad_offer_day")
 	event_help_prepaid = bool(parsed.get("event_help_prepaid", false))
 	event_swap_credits = _loaded_int(parsed, "event_swap_credits")
 	shared_gift_credits = _loaded_int(parsed, "shared_gift_credits")

@@ -175,7 +175,9 @@ func _on_stage_pressed(event: Dictionary, stage: int) -> void:
 
 # Sadzenie z tasmy od razu idzie na plansze, a standardowe przez wybor talii.
 func _start_stage(event: Dictionary, stage: int, with_help: bool) -> void:
+	# Wydarzenie moglo sie skonczyc przy otwartym ekranie: pokaz aktualne.
 	if not GameState.start_event_game(stage, with_help):
+		get_tree().reload_current_scene()
 		return
 	var scene := "res://scenes/Main.tscn" if event["planting"] == "belt" else "res://scenes/PlantSelect.tscn"
 	get_tree().change_scene_to_file(scene)

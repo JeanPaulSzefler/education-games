@@ -26,7 +26,7 @@ const POPUP_TEXT_COLOR := Color(0.15, 0.12, 0.1)
 const CORNER_BTN_COLOR := Color(0.3, 0.45, 0.25)
 const OK_BTN_COLOR := Color(0.25, 0.6, 0.25)
 const SELECTED_ICON_BORDER := Color(0.95, 0.75, 0.1)
-const GREETING_SECONDS := 3.0
+const GREETING_SECONDS := 5.0
 const DELETE_BTN_COLOR := Color(0.75, 0.18, 0.15)
 # Ikonka "Moich roslinek" - Lisc Bananowca (indeks w PlantData.TYPES).
 const MY_PLANTS_ICON_PLANT := 2
@@ -38,7 +38,7 @@ const GAME_RULES_TEXT := "Smieciostwory ida przez ogrod do domu - nie pozwol im 
 	"Miedzy roslinkami stoja skrzynie z rubinami i roslimonetami. " + \
 	"Pokonana roslinka po prostu znika. Nawozy pojawiaja sie same na planszy - tapnij, zeby je zebrac; ich limit zwiekszysz w sklepie."
 const SHOP_OFFERS := [
-	{"rubies": 2, "price": "Reklama"},
+	{"rubies": 2, "price": "Reklama", "ad": true},
 	{"rubies": 10, "price": "5 zl"},
 	{"rubies": 20, "price": "9 zl"},
 	{"rubies": 50, "price": "20 zl"},
@@ -873,10 +873,16 @@ func _build_plant_upgrade(panel: Panel, plant_idx: int) -> void:
 	ruby.position = Vector2(panel.size.x - 70, 541)
 	panel.add_child(ruby)
 
-# Sklep: oferty rubinow z notatek 2026-10-06. Zakupy za pieniadze i reklamy
-# wymagaja uslug Google Play (platnosci, AdMob), wiec na razie to tylko
-# podglad ofert z nieaktywnymi przyciskami. Ponizej lista wszystkiego, co mozna
-# kupic za rubiny i roslimonety.
+# Oferta "za reklame": zamiast reklamy gra pokazuje napis, a potem daje nagrode.
+func _on_ad_offer_pressed() -> void:
+	_show_greeting(func():
+		GameState.claim_ad_offer()
+		ruby_label.text = str(GameState.rubies)
+		_show_shop())
+
+# Sklep: oferty rubinow z notatek 2026-10-06. Zakupy za pieniadze wymagaja uslug
+# Google Play, wiec na razie to tylko podglad ofert z nieaktywnymi przyciskami.
+# Ponizej lista wszystkiego, co mozna kupic za rubiny i roslimonety.
 func _show_shop() -> void:
 	var panel := _open_popup(Vector2(960, 640), "Sklep")
 	var card_size := Vector2(160, 220)
@@ -904,9 +910,14 @@ func _show_shop() -> void:
 		var price_btn := _popup_button(price, Color(0.3, 0.5, 0.75), Vector2(14, card_size.y - 84), Vector2(card_size.x - 28, 64))
 		price_btn.add_theme_font_size_override("font_size", 24 if price.length() < 7 else 19)
 		price_btn.disabled = true
+		if offer.get("ad", false):
+			price_btn.disabled = not GameState.is_ad_offer_ready()
+			if price_btn.disabled:
+				price_btn.text = "Jutro"
+			price_btn.pressed.connect(_on_ad_offer_pressed)
 		card.add_child(price_btn)
 
-	var info := _popup_label("Masz: %d rubinow, %d roslimonet. Zakupy za pieniadze i reklamy dodamy pozniej." % [GameState.rubies, GameState.plant_coins], 20)
+	var info := _popup_label("Masz: %d rubinow, %d roslimonet. Zakupy za pieniadze dodamy pozniej." %[GameState.rubies, GameState.plant_coins], 20)
 	info.position = Vector2(0, 294)
 	info.size = Vector2(panel.size.x, 34)
 	info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1132,15 +1143,28 @@ func _show_icon_unlock(plant_idx: int, draft_name: String, draft_icon: int) -> v
 				_show_icon_unlock(plant_idx, draft_name, draft_icon)))
 	panel.add_child(step_btn)
 
-# Zamiast reklam: napis "dobrego dnia!" przez chwile na ekranie.
+# Zamiast reklam: napis z ikonka sadzonki i odliczaniem przez 5 sekund. Wszystkie
+# opcje "za reklame" uzywaja tego samego okienka.
 func _show_greeting(on_finished: Callable) -> void:
-	var panel := _open_popup(Vector2(640, 240), "", false)
-	var greeting := _popup_label("dobrego dnia!", 48)
-	greeting.size = panel.size
-	greeting.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	greeting.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	panel.add_child(greeting)
-	popup.create_tween().tween_callback(on_finished).set_delay(GREETING_SECONDS)
+	var panel := _open_popup(Vector2(640, 300), "", false)
+	var row := HBoxContainer.new()
+	row.position = Vector2(0, 50)
+	row.size = Vector2(panel.size.x, 90)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 18)
+	panel.add_child(row)
+	row.add_child(_popup_label("Miłego grania!", 48))
+	row.add_child(UiIcons.sapling(80))
+
+	var countdown := _popup_label(str(int(GREETING_SECONDS)), 56)
+	countdown.position = Vector2(0, 170)
+	countdown.size = Vector2(panel.size.x, 80)
+	countdown.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	panel.add_child(countdown)
+
+	var tw := popup.create_tween()
+	tw.tween_method(func(left: float): countdown.text = str(ceili(left)), GREETING_SECONDS, 0.0, GREETING_SECONDS)
+	tw.tween_callback(on_finished)
 
 # --- Kod testowy: poprawny kod pozwala raz zmienic wydarzenie. Wyjscie z tych
 # okienek albo zmiana wydarzenia zuzywa kod, wiec nastepnym razem trzeba wpisac go znowu. ---

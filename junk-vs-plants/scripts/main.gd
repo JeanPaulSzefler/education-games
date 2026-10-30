@@ -292,6 +292,8 @@ var is_guest := false
 var next_entity_id := 1
 var snapshot_timer := 0.0
 var net_views := {}
+# Host pilnuje tez odnawiania roslin goscia: indeks rosliny -> pozostaly czas.
+var guest_cooldowns := {}
 
 func _ready() -> void:
 	team = NetSession.active
@@ -303,6 +305,9 @@ func _ready() -> void:
 		if GameState.event_help_active and event_rules.has("help"):
 			help_type = event_rules["help"]["type"]
 		GameState.event_help_active = false
+		# Powtorka etapu bez ponownego zakupu nie zachowuje kupionej czwartej rosliny.
+		if event_rules.get("forced_deck", false) and help_type == "":
+			GameState.current_loadout = GameState.event_forced_plants.duplicate()
 	if team:
 		water = TEAM_START_WATER
 	randomize()
@@ -970,6 +975,10 @@ func _process(delta: float) -> void:
 # --- Odnawianie roslin w pasku (jak w PvZ): cien zakrywa kafelek i kurczy
 # sie ku gorze, az roslina znow bedzie gotowa do posadzenia. ---
 func _update_cooldowns(delta: float) -> void:
+	for idx in guest_cooldowns.keys():
+		guest_cooldowns[idx] -= delta
+		if guest_cooldowns[idx] <= 0.0:
+			guest_cooldowns.erase(idx)
 	for idx in plant_cooldowns.keys():
 		plant_cooldowns[idx] -= delta
 		if plant_cooldowns[idx] <= 0.0:
@@ -1047,6 +1056,12 @@ func _update_wave_spawning(delta: float) -> void:
 			_announce("%s nadchodzi!" % BOSS_TYPES[boss_idx]["name"])
 			_spawn_boss(boss_idx, ROWS / 2)
 
+# Losowy rzad wroga; w Waskim gardle tylko z dozwolonych rzedow.
+func _random_enemy_row() -> int:
+	if event_rules.has("narrow_rows"):
+		return event_rules["narrow_rows"].pick_random()
+	return randi_range(0, ROWS - 1)
+
 # Dopisuje do kolejki kopie typow wrogow z tej samej fali (ratio = ulamek jej
 # wielkosci, w losowych rzedach), rozrzucone miedzy oryginalnych wrogow.
 func _add_extra_enemies(queue: Array, ratio: float) -> void:
@@ -1054,7 +1069,7 @@ func _add_extra_enemies(queue: Array, ratio: float) -> void:
 	var extra := int(ceil(originals.size() * ratio))
 	for i in range(extra):
 		var src: Dictionary = originals[i % originals.size()]
-		var copy := {"type": src["type"], "row": randi_range(0, ROWS - 1)}
+		var copy := {"type": src["type"], "row": _random_enemy_row()}
 		queue.insert(randi_range(1, queue.size()), copy)
 
 # --- Tryb nieskonczony ---
@@ -1131,7 +1146,7 @@ func _pile_x(pile: Dictionary) -> float:
 func _spawn_junk_pile() -> void:
 	var free := []
 	for c in range(JUNK_PILE_MIN_COL, COLS):
-		for r in range(ROWS):
+		for r in event_rules.get("narrow_rows", range(ROWS)):
 			var key := _cell_key(c, r)
 			if grid_occupancy[c][r] == null and not blocked_cells.has(key) and not junk_piles.has(key):
 				free.append(Vector2i(c, r))
@@ -2557,9 +2572,13 @@ func _on_guest_action(kind: String, args: Array) -> void:
 	match kind:
 		"place":
 			if _is_valid_cell(args, 1) and args[0] is int and args[0] >= 0 and args[0] < PLANT_TYPES.size():
+				if guest_cooldowns.has(args[0]):
+					NetSession.send_action_error("Ta roslina jeszcze odrasta - poczekaj chwile")
+					return
 				var guest_power := clampf(float(args[3]), 1.0, GameState.max_plant_power()) if args.size() > 3 else 1.0
 				var error := _place_plant(args[0], args[1], args[2], guest_power)
 				if error == "":
+					guest_cooldowns[args[0]] = PLANT_TYPES[args[0]]["recharge"] / guest_power
 					NetSession.send_place_confirmed(args[0])
 				else:
 					NetSession.send_action_error(error)
@@ -2986,7 +3005,12 @@ func _show_end_buttons() -> void:
 	retry_btn.text = "Zagraj ponownie"
 	retry_btn.position = Vector2(GRID_LEFT, y)
 	retry_btn.size = Vector2(250, 40)
-	retry_btn.pressed.connect(func(): get_tree().reload_current_scene())
+	retry_btn.pressed.connect(func():
+		# Wydarzenie skonczylo sie w trakcie gry: etapu nie da sie juz powtorzyc.
+		if event_game and GameState.event_seconds_left() == 0:
+			get_tree().change_scene_to_file("res://scenes/Events.tscn")
+		else:
+			get_tree().reload_current_scene())
 	add_child(retry_btn)
 
 	var select_btn := Button.new()
