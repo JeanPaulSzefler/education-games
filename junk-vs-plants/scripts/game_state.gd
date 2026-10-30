@@ -29,6 +29,14 @@ const TEAM_WIN_COINS := 50
 const FERTILIZER_START_LIMIT := 2
 const FERTILIZER_LIMIT_PRICES := [5, 6, 7, 8]
 
+# Ulepszenia roslin: kazdy z 10 poziomow to tylko +1,5% sily (razem +15%), a cena
+# rosnie od 10 do 28 rubinow. Cala sciezka daje ok. 75 rubinow, wiec ulepszenia
+# nie zastepuja planowania na planszy.
+const PLANT_UPGRADE_MAX_LEVEL := 10
+const PLANT_UPGRADE_STEP := 0.015
+const PLANT_UPGRADE_BASE_PRICE := 10
+const PLANT_UPGRADE_PRICE_STEP := 2
+
 # Kod testowy pozwala raz zmienic wydarzenie. W kodzie gry jest tylko jego skrot.
 const TEST_CODE_SHA256 := "e0277cd898e021d443fe6817322b8f98623cb9a0a366e5daa39e03c47bf79959"
 const TEST_CODE_MAX_FAILURES := 3
@@ -89,6 +97,8 @@ var plant_coins := 0
 # Otwarte skrzynie: numery poziomow, przed ktorymi stoja na sciezce.
 var opened_chests: Array = []
 var fertilizer_limit := FERTILIZER_START_LIMIT
+# Ulepszenia roslin: String(indeks rosliny) -> poziom.
+var plant_upgrades: Dictionary = {}
 
 # Ogrod: sadzonki, pola {"state", "end" (czas Unix konca wzrostu)} i czas
 # powrotu pszczolki (0 = jeszcze nie ustalony).
@@ -113,6 +123,11 @@ var shared_my_harvests := 0
 var shared_friend_harvests := 0
 var shared_goal_paid := false
 var shared_gift_day := 0
+# Kupione w sklepie na zapas w biezacym wydarzeniu: pomoc na etap, wymiany roslin
+# i dodatkowe sadzonki dla znajomego. Znikaja razem z wydarzeniem.
+var event_help_prepaid := false
+var event_swap_credits := 0
+var shared_gift_credits := 0
 # Kod testowy: zapisane postepy wydarzen, id wydarzenia -> postepy.
 var event_saved_progress: Dictionary = {}
 
@@ -162,6 +177,7 @@ func _reset_progress() -> void:
 	plant_coins = 0
 	opened_chests = []
 	fertilizer_limit = FERTILIZER_START_LIMIT
+	plant_upgrades = {}
 	saplings = 0
 	garden_plots = []
 	for i in range(GARDEN_PLOTS):
@@ -331,6 +347,9 @@ func _reset_event_progress() -> void:
 	shared_friend_harvests = 0
 	shared_goal_paid = false
 	shared_gift_day = 0
+	event_help_prepaid = false
+	event_swap_credits = 0
+	shared_gift_credits = 0
 
 # --- Kod testowy: zmiana wydarzenia ---
 func is_test_code(code: String) -> bool:
@@ -385,9 +404,15 @@ func _event_progress() -> Dictionary:
 		"shared_friend_harvests": shared_friend_harvests,
 		"shared_goal_paid": shared_goal_paid,
 		"shared_gift_day": shared_gift_day,
+		"help_prepaid": event_help_prepaid,
+		"swap_credits": event_swap_credits,
+		"gift_credits": shared_gift_credits,
 	}
 
 func _restore_event_progress(saved: Dictionary) -> void:
+	event_help_prepaid = bool(saved.get("help_prepaid", false))
+	event_swap_credits = _loaded_int(saved, "swap_credits")
+	shared_gift_credits = _loaded_int(saved, "gift_credits")
 	for stage in saved.get("completed_stages", []):
 		event_completed_stages.append(int(stage))
 	var stars: Dictionary = saved.get("stars", {})
@@ -411,11 +436,11 @@ func is_event_stage_open(stage: int) -> bool:
 func start_event_game(stage: int, with_help := false) -> bool:
 	var event := current_event()
 	if with_help:
-		var cost: int = event["help"]["cost"]
-		if plant_coins < cost:
+		if event_help_prepaid:
+			event_help_prepaid = false
+			save_progress()
+		elif not spend_coins(event["help"]["cost"]):
 			return false
-		plant_coins -= cost
-		save_progress()
 	event_help_active = with_help
 	event_stage = stage
 	current_level_index = EventData.STAGES[stage]["level_idx"]
@@ -495,6 +520,74 @@ func spend_coins(amount: int) -> bool:
 	save_progress()
 	return true
 
+# --- Zakupy w sklepie ---
+# Pomoc na nastepny etap biezacego wydarzenia, kupiona na zapas.
+func buy_event_help() -> bool:
+	var event := current_event()
+	if not event.has("help") or event_help_prepaid or not spend_coins(event["help"]["cost"]):
+		return false
+	event_help_prepaid = true
+	save_progress()
+	return true
+
+func buy_swap_credit() -> bool:
+	var event := current_event()
+	if not event.get("belt_preview", false) or not spend_coins(event["preview_swap_cost"]):
+		return false
+	event_swap_credits += 1
+	save_progress()
+	return true
+
+func use_swap_credit() -> bool:
+	if event_swap_credits <= 0:
+		return false
+	event_swap_credits -= 1
+	save_progress()
+	return true
+
+func buy_gift_credit() -> bool:
+	if not is_shared_garden_on() or not spend_coins(EventData.GIFT_COST):
+		return false
+	shared_gift_credits += 1
+	save_progress()
+	return true
+
+# Pole, na ktorym roslinka urosnie najszybciej (-1, gdy nic nie rosnie).
+func soonest_growing_plot() -> int:
+	var best := -1
+	for i in range(garden_plots.size()):
+		if garden_plots[i]["state"] == PLOT_GROWING:
+			if best < 0 or plot_seconds_left(i) < plot_seconds_left(best):
+				best = i
+	return best
+
+# --- Ulepszenia roslin ---
+func plant_upgrade_level(plant_idx: int) -> int:
+	return plant_upgrades.get(str(plant_idx), 0)
+
+# Mnoznik sily rosliny (1.0 bez ulepszen).
+func plant_power(plant_idx: int) -> float:
+	return 1.0 + plant_upgrade_level(plant_idx) * PLANT_UPGRADE_STEP
+
+func max_plant_power() -> float:
+	return 1.0 + PLANT_UPGRADE_MAX_LEVEL * PLANT_UPGRADE_STEP
+
+# Cena kolejnego poziomu; -1, gdy roslina jest juz w pelni ulepszona.
+func plant_upgrade_price(plant_idx: int) -> int:
+	var level := plant_upgrade_level(plant_idx)
+	if level >= PLANT_UPGRADE_MAX_LEVEL:
+		return -1
+	return PLANT_UPGRADE_BASE_PRICE + level * PLANT_UPGRADE_PRICE_STEP
+
+func buy_plant_upgrade(plant_idx: int) -> bool:
+	var price := plant_upgrade_price(plant_idx)
+	if price < 0 or rubies < price or not is_plant_unlocked(plant_idx):
+		return false
+	rubies -= price
+	plant_upgrades[str(plant_idx)] = plant_upgrade_level(plant_idx) + 1
+	save_progress()
+	return true
+
 # --- Sadzenie razem (opcja w tygodniu Low) ---
 func is_shared_garden_offered() -> bool:
 	return current_event().get("shared_garden", false)
@@ -516,6 +609,10 @@ func is_free_gift_ready() -> bool:
 func pay_for_gift() -> bool:
 	if is_free_gift_ready():
 		shared_gift_day = _today()
+		save_progress()
+		return true
+	if shared_gift_credits > 0:
+		shared_gift_credits -= 1
 		save_progress()
 		return true
 	return spend_coins(EventData.GIFT_COST)
@@ -820,6 +917,10 @@ func save_progress() -> void:
 		"plant_coins": plant_coins,
 		"opened_chests": opened_chests,
 		"fertilizer_limit": fertilizer_limit,
+		"plant_upgrades": plant_upgrades,
+		"event_help_prepaid": event_help_prepaid,
+		"event_swap_credits": event_swap_credits,
+		"shared_gift_credits": shared_gift_credits,
 		"saplings": saplings,
 		"garden_plots": garden_plots,
 		"next_bee_time": next_bee_time,
@@ -934,6 +1035,15 @@ func _load_v3_fields(parsed: Dictionary) -> void:
 	shared_gift_day = _loaded_int(parsed, "shared_gift_day")
 	shared_goal_paid = bool(parsed.get("shared_goal_paid", false))
 	shared_choice = str(parsed.get("shared_choice", ""))
+	event_help_prepaid = bool(parsed.get("event_help_prepaid", false))
+	event_swap_credits = _loaded_int(parsed, "event_swap_credits")
+	shared_gift_credits = _loaded_int(parsed, "shared_gift_credits")
+	var loaded_upgrades = parsed.get("plant_upgrades", {})
+	if loaded_upgrades is Dictionary:
+		for key in loaded_upgrades.keys():
+			var level = loaded_upgrades[key]
+			if typeof(level) == TYPE_FLOAT or typeof(level) == TYPE_INT:
+				plant_upgrades[str(key)] = clampi(int(level), 0, PLANT_UPGRADE_MAX_LEVEL)
 	var loaded_saved = parsed.get("event_saved_progress", {})
 	if loaded_saved is Dictionary:
 		for key in loaded_saved.keys():

@@ -70,6 +70,9 @@ func _refresh() -> void:
 	if GameState.is_free_gift_ready():
 		gift_btn.text = "Wyslij sadzonke za darmo"
 		gift_btn.disabled = false
+	elif GameState.shared_gift_credits > 0:
+		gift_btn.text = "Wyslij kupiona sadzonke (%d)" % GameState.shared_gift_credits
+		gift_btn.disabled = false
 	else:
 		gift_btn.text = "Wyslij sadzonke za %d roslimonet" % EventData.GIFT_COST
 		gift_btn.disabled = GameState.plant_coins < EventData.GIFT_COST

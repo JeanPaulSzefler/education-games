@@ -167,8 +167,9 @@ func _on_stage_pressed(event: Dictionary, stage: int) -> void:
 	play_btn.pressed.connect(func(): _start_stage(event, stage, false))
 	panel.add_child(play_btn)
 
-	var help_btn := _button("Kup za %d i zagraj" % help["cost"], HELP_BTN_COLOR, Vector2(370, 170), Vector2(300, 80))
-	help_btn.disabled = GameState.plant_coins < help["cost"]
+	var help_text: String = "Uzyj kupionej pomocy" if GameState.event_help_prepaid else "Kup za %d i zagraj" % help["cost"]
+	var help_btn := _button(help_text, HELP_BTN_COLOR, Vector2(370, 170), Vector2(300, 80))
+	help_btn.disabled = not GameState.event_help_prepaid and GameState.plant_coins < help["cost"]
 	help_btn.pressed.connect(func(): _start_stage(event, stage, true))
 	panel.add_child(help_btn)
 

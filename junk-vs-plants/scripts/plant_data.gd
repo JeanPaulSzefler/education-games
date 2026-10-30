@@ -36,6 +36,20 @@ extends RefCounted
 #
 # description: krotki opis dla dziecka - pokazywany przy odblokowaniu rosliny
 # na sciezce, w "Opisie gry" i w "Moich roslinkach".
+const UPGRADE_EFFECTS := {
+	"shooter": "mocniejsze pociski",
+	"volley": "mocniejsze pociski",
+	"aimed": "mocniejsze pociski",
+	"generator": "szybciej daje krople",
+	"wall": "wiecej zycia",
+	"melee": "mocniej oddaje",
+	"freeze": "dluzej mrozi",
+	"burn": "mocniej pali",
+	"bomb": "mocniejszy wybuch",
+	"gust": "mocniejszy podmuch",
+	"vines": "szybciej odrasta",
+}
+
 const TYPES := [
 	{
 		"name": "Kukurydza", "recharge": 5.0, "cost": 50, "hp": 100, "role": "shooter",

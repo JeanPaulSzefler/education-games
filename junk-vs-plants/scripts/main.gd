@@ -802,12 +802,22 @@ func _try_place_plant(col: int, row: int) -> void:
 		free_plant_button.queue_free()
 		free_plant_button = null
 	else:
-		plant_cooldowns[selected_plant_type] = PLANT_TYPES[selected_plant_type]["recharge"]
+		plant_cooldowns[selected_plant_type] = _recharge_time(selected_plant_type)
 	selected_plant_type = -1
 	_update_hud()
 
+# Pnacza nie maja czego wzmocnic na planszy, wiec ulepszenie skraca ich odnawianie.
+func _recharge_time(type_idx: int) -> float:
+	var recharge: float = PLANT_TYPES[type_idx]["recharge"]
+	if PLANT_TYPES[type_idx]["role"] == "vines":
+		return recharge / GameState.plant_power(type_idx)
+	return recharge
+
 # Sadzi rosline (u hosta, takze na prosbe goscia). Zwraca powod odmowy albo "".
-func _place_plant(type_idx: int, col: int, row: int) -> String:
+# power: sila z ulepszen gracza, ktory sadzi; 0 = gracz na tym telefonie.
+func _place_plant(type_idx: int, col: int, row: int, power := 0.0) -> String:
+	if power <= 0.0:
+		power = GameState.plant_power(type_idx)
 	if blocked_cells.has(_cell_key(col, row)):
 		return "Na tym polu nie mozna sadzic"
 	var pt = PLANT_TYPES[type_idx]
@@ -837,9 +847,10 @@ func _place_plant(type_idx: int, col: int, row: int) -> String:
 	ring.visible = false
 	node.add_child(ring)
 
+	var plant_hp: float = pt["hp"] * power if pt["role"] == "wall" else float(pt["hp"])
 	var plant := {
-		"id": _new_entity_id(),
-		"node": node, "hp": pt["hp"], "max_hp": pt["hp"], "col": col, "row": row,
+		"id": _new_entity_id(), "power": power,
+		"node": node, "hp": plant_hp, "max_hp": plant_hp, "col": col, "row": row,
 		"type_idx": type_idx, "atk_timer": 0.0,
 		"gen_timer": pt.get("water_interval", 0.0) * _cactus_water_multiplier(),
 		"bar": bar, "hurt_timer": HEALTH_BAR_HIDE_DELAY + 1.0,
@@ -1249,6 +1260,7 @@ func _update_plants(delta: float) -> void:
 
 		var pt = PLANT_TYPES[plant["type_idx"]]
 		var boost := _plant_boost(plant)
+		var power: float = plant["power"]
 
 		match pt["role"]:
 			"shooter":
@@ -1260,7 +1272,7 @@ func _update_plants(delta: float) -> void:
 							plant["atk_timer"] = pt["interval"]
 							var row: int = plant["row"]
 							var muzzle_x: float = plant["base_pos"].x + CELL
-							var dmg: float = pt["dmg"] * boost
+							var dmg: float = pt["dmg"] * boost * power
 							var pierce: bool = pt.get("pierce", false)
 							_animate_shooter_shot(plant, func(): _spawn_projectile(row, muzzle_x, dmg, pierce))
 			"volley":
@@ -1274,7 +1286,7 @@ func _update_plants(delta: float) -> void:
 						if not _find_enemy_in_row_between(plant["row"], from_x, max_x).is_empty() or _pile_in_row_between(plant["row"], from_x, max_x) != null:
 							plant["atk_timer"] = pt["interval"]
 							var vrow: int = plant["row"]
-							var vdmg: float = pt["dmg"] * boost
+							var vdmg: float = pt["dmg"] * boost * power
 							var count: int = pt["volley_count"]
 							_animate_shooter_shot(plant, func(): _spawn_volley(vrow, from_x + CELL, vdmg, count, max_x))
 			"aimed":
@@ -1286,10 +1298,10 @@ func _update_plants(delta: float) -> void:
 						if not aim_target.is_empty():
 							plant["atk_timer"] = pt["interval"]
 							var origin: Vector2 = plant["base_pos"] + Vector2(CELL - 16, (CELL - 16) * 0.3)
-							var admg: float = pt["dmg"] * boost
+							var admg: float = pt["dmg"] * boost * power
 							_animate_shooter_shot(plant, func(): _spawn_homing_projectile(origin, aim_target, admg))
 			"generator":
-				plant["gen_timer"] -= delta * boost
+				plant["gen_timer"] -= delta * boost * power
 				if plant["gen_timer"] <= 0.0:
 					plant["gen_timer"] = pt["water_interval"] * _cactus_water_multiplier()
 					for i in range(pt.get("water_drops", 1)):
@@ -1503,7 +1515,7 @@ func _update_enemies(delta: float) -> void:
 				_flash_health_bar(blocking_plant)
 				_animate_bite(e, blocking_plant)
 				if bpt["role"] == "melee":
-					e["hp"] -= bpt["counter_dmg"] * _plant_boost(blocking_plant)
+					e["hp"] -= bpt["counter_dmg"] * _plant_boost(blocking_plant) * blocking_plant["power"]
 					_flash_health_bar(e)
 					_animate_melee_punch(blocking_plant, e["node"].position + e["node"].size / 2.0)
 				if blocking_plant["hp"] <= 0:
@@ -1715,7 +1727,7 @@ func _trigger_freeze(plant: Dictionary, pt: Dictionary, target: Dictionary) -> v
 	# Mrozoroslinka znika, ale szkodnik, ktory na nia stanal, zostaje
 	# calkowicie unieruchomiony (nie moze sie ruszyc ani nic zniszczyc) az do
 	# rozmrozenia - reszta rzedu porusza sie normalnie.
-	target["slow_timer"] = pt["slow_duration"] * _plant_boost(plant)
+	target["slow_timer"] = pt["slow_duration"] * _plant_boost(plant) * plant["power"]
 	target["slow_factor"] = pt["slow_factor"]
 	target["node"].modulate = FROZEN_COLOR
 	_remove_plant(plant)
@@ -1724,7 +1736,7 @@ func _trigger_freeze(plant: Dictionary, pt: Dictionary, target: Dictionary) -> v
 # burn_duration s traci w sumie burn_dmg HP, ale moze isc dalej.
 func _trigger_burn(plant: Dictionary, pt: Dictionary, target: Dictionary) -> void:
 	target["burn_timer"] = pt["burn_duration"]
-	target["burn_dps"] = pt["burn_dmg"] * _plant_boost(plant) / pt["burn_duration"]
+	target["burn_dps"] = pt["burn_dmg"] * _plant_boost(plant) * plant["power"] / pt["burn_duration"]
 	if not target.get("telegraphing", false):
 		target["node"].modulate = _enemy_base_modulate(target)
 	if target["flames"] == null:
@@ -1759,7 +1771,7 @@ func _trigger_gust(plant: Dictionary, pt: Dictionary) -> void:
 	_spawn_gust_cloud(plant["node"].position.x, plant["row"])
 	if team:
 		NetSession.send_event("gust", [plant["node"].position.x, plant["row"]])
-	var boost := _plant_boost(plant)
+	var boost: float = _plant_boost(plant) * plant["power"]
 	active_gusts.append({
 		"x": plant["node"].position.x, "row": plant["row"],
 		"dmg": pt["gust_dmg"] * boost, "knockback": pt["knockback"] * boost, "hit": [],
@@ -1813,7 +1825,7 @@ func _trigger_bomb(plant: Dictionary, pt: Dictionary) -> void:
 		NetSession.send_event("bomb", [plant["col"], plant["row"]])
 	var blast_x := float(GRID_LEFT + plant["col"] * CELL)
 	var radius_cells: int = pt["blast_radius_cells"]
-	var blast_dmg: float = pt["blast_dmg"] * _plant_boost(plant)
+	var blast_dmg: float = pt["blast_dmg"] * _plant_boost(plant) * plant["power"]
 	var dead := []
 	for e in enemies:
 		if abs(e["row"] - plant["row"]) <= radius_cells and abs(e["x"] - blast_x) <= CELL * (radius_cells + 0.9):
@@ -2252,7 +2264,7 @@ func _rebuild_belt_preview() -> void:
 func _on_preview_pressed(i: int) -> void:
 	if game_over:
 		return
-	if not GameState.spend_coins(event_rules["preview_swap_cost"]):
+	if not GameState.use_swap_credit() and not GameState.spend_coins(event_rules["preview_swap_cost"]):
 		message_label.text = "Za malo roslimonet na wymiane"
 		return
 	belt_queue[i] = {"plant": _random_belt_plant(), "swapped": true}
@@ -2545,7 +2557,8 @@ func _on_guest_action(kind: String, args: Array) -> void:
 	match kind:
 		"place":
 			if _is_valid_cell(args, 1) and args[0] is int and args[0] >= 0 and args[0] < PLANT_TYPES.size():
-				var error := _place_plant(args[0], args[1], args[2])
+				var guest_power := clampf(float(args[3]), 1.0, GameState.max_plant_power()) if args.size() > 3 else 1.0
+				var error := _place_plant(args[0], args[1], args[2], guest_power)
 				if error == "":
 					NetSession.send_place_confirmed(args[0])
 				else:
@@ -2595,13 +2608,13 @@ func _guest_tile_tap(col: int, row: int) -> void:
 		message_label.text = "Wybierz rosline z paska po lewej"
 		return
 	else:
-		NetSession.send_action("place", [selected_plant_type, col, row])
+		NetSession.send_action("place", [selected_plant_type, col, row, GameState.plant_power(selected_plant_type)])
 		selected_plant_type = -1
 	message_label.text = ""
 	_update_hud()
 
 func _on_place_confirmed(plant_idx: int) -> void:
-	plant_cooldowns[plant_idx] = PLANT_TYPES[plant_idx]["recharge"]
+	plant_cooldowns[plant_idx] = _recharge_time(plant_idx)
 
 func _on_team_event(kind: String, args: Array) -> void:
 	match kind:
