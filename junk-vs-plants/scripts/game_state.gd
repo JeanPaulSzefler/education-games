@@ -31,6 +31,8 @@ const FERTILIZER_LIMIT_PRICES := [5, 6, 7, 8]
 
 # Kod testowy pozwala raz zmienic wydarzenie. W kodzie gry jest tylko jego skrot.
 const TEST_CODE_SHA256 := "e0277cd898e021d443fe6817322b8f98623cb9a0a366e5daa39e03c47bf79959"
+const TEST_CODE_MAX_FAILURES := 3
+const TEST_CODE_LOCK_SECONDS := 10 * 60
 
 # Ogrod: 8 pol, roslinka rosnie 15 godzin i daje 50 roslimonet. Przyspieszenie
 # kosztuje 15 rubinow, a pszczolka zabiera 3 godziny i wraca po 15-30 minutach.
@@ -132,6 +134,10 @@ var profiles: Array = []
 var next_profile_id := 1
 # Wybrane konto ("" = jeszcze zadnego nie wybrano - wtedy nic nie zapisujemy).
 var current_profile_id := ""
+# Kod testowy: nieudane proby i koniec blokady (czas Unix). Sa wspolne dla
+# wszystkich kont, zeby zmiana konta nie omijala blokady.
+var test_code_failures := 0
+var test_code_locked_until := 0
 
 # Nazwa i ikona wybranego konta (plakietka w prawym dolnym rogu sciezki).
 var player_name := DEFAULT_PLAYER_NAME
@@ -183,6 +189,8 @@ func load_profiles() -> void:
 	var parsed = JSON.parse_string(FileAccess.get_file_as_string(PROFILES_PATH))
 	if not (parsed is Dictionary):
 		return
+	test_code_failures = _loaded_int(parsed, "test_code_failures")
+	test_code_locked_until = _loaded_int(parsed, "test_code_locked_until")
 	var raw_next = parsed.get("next_id", 1)
 	if typeof(raw_next) == TYPE_FLOAT or typeof(raw_next) == TYPE_INT:
 		next_profile_id = max(1, int(raw_next))
@@ -203,7 +211,12 @@ func load_profiles() -> void:
 func save_profiles() -> void:
 	var file := FileAccess.open(PROFILES_PATH, FileAccess.WRITE)
 	if file:
-		file.store_string(JSON.stringify({"next_id": next_profile_id, "profiles": profiles}))
+		file.store_string(JSON.stringify({
+			"next_id": next_profile_id,
+			"profiles": profiles,
+			"test_code_failures": test_code_failures,
+			"test_code_locked_until": test_code_locked_until,
+		}))
 		file.close()
 
 # Zapis sprzed kont przenosimy do pierwszego konta (z domyslna nazwa, ktora
@@ -322,6 +335,26 @@ func _reset_event_progress() -> void:
 # --- Kod testowy: zmiana wydarzenia ---
 func is_test_code(code: String) -> bool:
 	return code.strip_edges().sha256_text() == TEST_CODE_SHA256
+
+# Ile sekund zostalo do konca blokady. Cofniety zegar nie wydluza jej ponad 10 minut.
+func test_code_lock_seconds_left() -> int:
+	return clampi(test_code_locked_until - _now(), 0, TEST_CODE_LOCK_SECONDS)
+
+# Sprawdza kod wpisany przez gracza. Trzecia zla proba z rzedu blokuje kod na
+# 10 minut, a podczas blokady zaden kod nie dziala.
+func try_test_code(code: String) -> bool:
+	if test_code_lock_seconds_left() > 0:
+		return false
+	if is_test_code(code):
+		test_code_failures = 0
+		save_profiles()
+		return true
+	test_code_failures += 1
+	if test_code_failures >= TEST_CODE_MAX_FAILURES:
+		test_code_failures = 0
+		test_code_locked_until = _now() + TEST_CODE_LOCK_SECONDS
+	save_profiles()
+	return false
 
 # Przechodzi na wybrane wydarzenie, ktore startuje z pelnym tygodniem. Postepy
 # obecnego mozna zachowac na powrot do niego; bez zachowania przepadaja.

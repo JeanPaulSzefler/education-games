@@ -1084,11 +1084,22 @@ func _show_code_entry() -> void:
 
 	var ok_btn := _popup_button("Sprawdz", OK_BTN_COLOR, Vector2((panel.size.x - 220) / 2.0, 206), Vector2(220, 70))
 	ok_btn.pressed.connect(func():
-		if GameState.is_test_code(code_edit.text):
+		if GameState.try_test_code(code_edit.text):
 			_show_event_switch()
 		else:
-			error_label.text = "Niepoprawny kod.")
+			_update_code_entry(code_edit, error_label, ok_btn, "Niepoprawny kod."))
 	panel.add_child(ok_btn)
+	_update_code_entry(code_edit, error_label, ok_btn, "")
+
+# Podczas blokady pole i przycisk sa nieaktywne, a napis podaje pozostaly czas.
+func _update_code_entry(code_edit: LineEdit, error_label: Label, ok_btn: Button, message: String) -> void:
+	var lock_left := GameState.test_code_lock_seconds_left()
+	code_edit.editable = lock_left == 0
+	ok_btn.disabled = lock_left > 0
+	error_label.text = message
+	if lock_left > 0:
+		code_edit.text = ""
+		error_label.text = "Za duzo prob. Sprobuj za %d min." % ceili(lock_left / 60.0)
 
 func _show_event_switch() -> void:
 	var panel := _open_popup(Vector2(1080, 640), "Wybierz wydarzenie")

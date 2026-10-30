@@ -24,7 +24,7 @@ Każde wydarzenie ma 5 etapów o rosnącej trudności (trudność poziomów 2, 6
 
 ## Kod testowy
 
-Na plakietce każdego konta jest przycisk „Kod testowy”. Poprawny kod pozwala raz zmienić bieżące wydarzenie na dowolne inne, a kolejna zmiana wymaga ponownego wpisania kodu. Gracz decyduje, czy postępy z opuszczanego wydarzenia mają się zapisać. Zapisane wracają przy ponownym przejściu na to wydarzenie kodem. Wybrane wydarzenie startuje z pełnym tygodniem, a potem gra przechodzi do następnego w kolejności. W repozytorium jest tylko skrót kodu (`TEST_CODE_SHA256` w `scripts/game_state.gd`).
+Na plakietce każdego konta jest przycisk „Kod testowy”. Poprawny kod pozwala raz zmienić bieżące wydarzenie na dowolne inne, a kolejna zmiana wymaga ponownego wpisania kodu. Gracz decyduje, czy postępy z opuszczanego wydarzenia mają się zapisać. Zapisane wracają przy ponownym przejściu na to wydarzenie kodem. Wybrane wydarzenie startuje z pełnym tygodniem, a potem gra przechodzi do następnego w kolejności. Po 3 nieudanych próbach z rzędu opcja blokuje się na 10 minut na całym telefonie, niezależnie od konta. W repozytorium jest tylko skrót kodu (`TEST_CODE_SHA256` w `scripts/game_state.gd`). **Przed wydaniem gry ten kod trzeba usunąć.**
 
 ## Sadzenie razem (opcja w tygodniu Łowów)
 
