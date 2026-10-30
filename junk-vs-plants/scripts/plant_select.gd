@@ -10,8 +10,14 @@ const CARD_SIZE := Vector2(152, 220)
 const CARD_GAP := Vector2(14, 20)
 const CARDS_PER_ROW := 7
 const GRID_TOP := 160.0
+const TEAM_LOADOUT_KEY := -1
+const EVENT_LOADOUT_KEY := -2
 
 var selected: Array = []
+# Wydarzenia: role niedostepne w talii, rosliny narzucone i limit talii.
+var banned_roles: Array = []
+var forced_plants: Array = []
+var max_plants := GameState.MAX_LOADOUT
 # plant_idx -> {"border_sb": StyleBoxFlat, "mark": Panel albo null}
 var card_refs: Dictionary = {}
 
@@ -20,7 +26,7 @@ var message_label: Label
 var play_button: Button
 
 func _ready() -> void:
-	var level: Dictionary = LevelData.LEVELS[GameState.current_level_index]
+	var level: Dictionary = GameState.current_level()
 
 	var bg := ColorRect.new()
 	bg.color = Color(0.15, 0.25, 0.15)
@@ -75,11 +81,19 @@ func _ready() -> void:
 	message_label.add_theme_color_override("font_color", Color(0.9, 0.35, 0.25))
 	add_child(message_label)
 
-	var loadout := GameState.get_loadout(GameState.current_level_index)
-	if loadout.is_empty():
-		var unlocked := GameState.unlocked_plant_indices()
-		loadout = unlocked.slice(0, min(GameState.MAX_LOADOUT, unlocked.size()))
-	selected = loadout.duplicate()
+	var event: Dictionary = GameState.current_event() if GameState.is_event_game() else {}
+	banned_roles = event.get("banned_roles", [])
+	if event.get("forced_deck", false):
+		forced_plants = GameState.event_forced_plants
+		max_plants = forced_plants.size() + (1 if GameState.event_help_active else 0)
+		subtitle.text = "Te rosliny sa narzucone" + (" - mozesz dodac czwarta" if GameState.event_help_active else "")
+		selected = forced_plants.duplicate()
+	else:
+		var loadout := GameState.get_loadout(_loadout_key())
+		if loadout.is_empty():
+			var unlocked := GameState.unlocked_plant_indices()
+			loadout = unlocked.slice(0, min(GameState.MAX_LOADOUT, unlocked.size()))
+		selected = loadout.filter(_is_plant_allowed)
 
 	_build_grid()
 	_update_counter()
@@ -99,6 +113,10 @@ func _ready() -> void:
 	add_child(play_button)
 	play_button.disabled = selected.is_empty()
 
+	if NetSession.active:
+		NetSession.game_starting.connect(_start_game)
+		NetSession.session_lost.connect(_on_back_pressed)
+
 func _build_grid() -> void:
 	card_refs.clear()
 	var total_width := CARDS_PER_ROW * CARD_SIZE.x + (CARDS_PER_ROW - 1) * CARD_GAP.x
@@ -112,7 +130,7 @@ func _build_grid() -> void:
 
 func _build_card(plant_idx: int, x: float, y: float) -> void:
 	var pt: Dictionary = PlantData.TYPES[plant_idx]
-	var unlocked := GameState.is_plant_unlocked(plant_idx)
+	var unlocked := _is_plant_allowed(plant_idx)
 	var is_selected := selected.has(plant_idx)
 
 	var card := Button.new()
@@ -194,7 +212,7 @@ func _build_card(plant_idx: int, x: float, y: float) -> void:
 		card.add_child(mark)
 	else:
 		var lock_label := Label.new()
-		lock_label.text = "od poziomu %d" % pt.get("unlock_level", 1)
+		lock_label.text = "niedostepna" if GameState.is_event_game() else "od poziomu %d" % pt.get("unlock_level", 1)
 		lock_label.position = Vector2(8, 158)
 		lock_label.size = Vector2(CARD_SIZE.x - 16, 24)
 		lock_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -204,12 +222,25 @@ func _build_card(plant_idx: int, x: float, y: float) -> void:
 
 	card_refs[plant_idx] = {"border_sb": border_sb, "mark": mark}
 
+# Czy roslina moze trafic do talii na tej planszy.
+func _is_plant_allowed(plant_idx: int) -> bool:
+	if forced_plants.has(plant_idx):
+		return true
+	if banned_roles.has(PlantData.TYPES[plant_idx]["role"]):
+		return false
+	if not forced_plants.is_empty() and not GameState.event_help_active:
+		return false
+	return GameState.is_plant_unlocked(plant_idx)
+
 func _on_card_pressed(plant_idx: int) -> void:
+	if forced_plants.has(plant_idx):
+		message_label.text = "Tej rosliny nie mozna zdjac"
+		return
 	if selected.has(plant_idx):
 		selected.erase(plant_idx)
 	else:
-		if selected.size() >= GameState.MAX_LOADOUT:
-			message_label.text = "Mozesz wybrac najwyzej 6 roslin"
+		if selected.size() >= max_plants:
+			message_label.text = "Mozesz wybrac najwyzej %d roslin" % max_plants
 			return
 		selected.append(plant_idx)
 	message_label.text = ""
@@ -224,12 +255,13 @@ func _update_card_visual(plant_idx: int) -> void:
 		refs["mark"].visible = is_selected
 
 func _update_counter() -> void:
-	counter_label.text = "Wybrane: %d / %d" % [selected.size(), GameState.MAX_LOADOUT]
+	counter_label.text = "Wybrane: %d / %d" % [selected.size(), max_plants]
 	if play_button:
 		play_button.disabled = selected.is_empty()
 
 func _on_back_pressed() -> void:
-	get_tree().change_scene_to_file("res://scenes/LevelSelect.tscn")
+	NetSession.end_session()
+	get_tree().change_scene_to_file("res://scenes/Events.tscn" if GameState.is_event_game() else "res://scenes/LevelSelect.tscn")
 
 func _on_play_pressed() -> void:
 	if selected.is_empty():
@@ -239,5 +271,20 @@ func _on_play_pressed() -> void:
 		if selected.has(i):
 			ordered.append(i)
 	GameState.current_loadout = ordered
-	GameState.set_loadout(GameState.current_level_index, ordered)
+	GameState.set_loadout(_loadout_key(), ordered)
+	if NetSession.active:
+		# Gra zespolowa rusza dopiero, gdy obaj gracze wybiora rosliny.
+		play_button.disabled = true
+		message_label.text = "Czekam na znajomego..."
+		NetSession.mark_ready()
+		return
+	_start_game()
+
+# Gra zespolowa i wydarzenia maja wlasne talie, niezalezne od poziomow sciezki.
+func _loadout_key() -> int:
+	if GameState.is_event_game():
+		return EVENT_LOADOUT_KEY
+	return TEAM_LOADOUT_KEY if NetSession.active else GameState.current_level_index
+
+func _start_game() -> void:
 	get_tree().change_scene_to_file("res://scenes/Main.tscn")

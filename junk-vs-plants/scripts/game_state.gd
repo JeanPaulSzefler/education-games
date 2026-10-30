@@ -7,9 +7,40 @@ const PROFILES_PATH := "user://profiles.json"
 const PROFILE_SAVE_PATH := "user://save_%s.json"
 const LEGACY_SAVE_PATH := "user://savegame.json"
 const MAX_PROFILES := 6
-const SAVE_VERSION := 3
-const LEVEL_COUNT := 28
+const SAVE_VERSION := 5
+const LEVEL_COUNT := 60
 const MAX_LOADOUT := 6
+# Poziomy z zapisow sprzed wersji 4 (kazdy dal potem dwa nowe poziomy).
+const OLD_LEVEL_COUNT := 28
+# Indeks trybu nieskonczonego w zapisach wersji 4.
+const V4_ENDLESS_INDEX := 56
+
+# Skrzynie na sciezce: {wartosc: waga} - nizsze wartosci sa bardziej
+# prawdopodobne.
+const CHEST_RUBY_WEIGHTS := {1: 60, 2: 30, 3: 10}
+const CHEST_COIN_WEIGHTS := {100: 40, 150: 28, 200: 18, 250: 10, 300: 4}
+
+# Nagroda za wygrana gre zespolowa, dla obu graczy.
+const TEAM_WIN_RUBIES := 1
+const TEAM_WIN_COINS := 50
+
+# Limit nawozow: startowy, a kolejne zwiekszenia w sklepie po tych cenach
+# (w rubinach) - az do 6.
+const FERTILIZER_START_LIMIT := 2
+const FERTILIZER_LIMIT_PRICES := [5, 6, 7, 8]
+
+# Ogrod: 8 pol, roslinka rosnie 15 godzin i daje 50 roslimonet. Przyspieszenie
+# kosztuje 15 rubinow, a pszczolka zabiera 3 godziny i wraca po 15-30 minutach.
+const GARDEN_PLOTS := 8
+const GARDEN_GROW_SECONDS := 15 * 3600
+const GARDEN_HARVEST_COINS := 50
+const GARDEN_RUSH_RUBIES := 15
+const GARDEN_BEE_SECONDS := 3 * 3600
+const BEE_RETURN_MIN_SECONDS := 15 * 60
+const BEE_RETURN_MAX_SECONDS := 30 * 60
+const PLOT_EMPTY := "empty"
+const PLOT_SAPLING := "sapling"
+const PLOT_GROWING := "growing"
 
 # Tryb nieskonczony daje rubin (jeden raz), gdy gracz pokona w jednej grze
 # co najmniej tylu wrogow ("umowiona ilosc punktow" z notatek 2026-10-06).
@@ -18,6 +49,15 @@ const DEFAULT_PLAYER_NAME := "Gracz"
 const PLAYER_NAME_MAX_LENGTH := 14
 
 var current_level_index := 0
+# Plansza gry zespolowej (pusta poza gra zespolowa) - patrz current_level().
+var team_level := {}
+# Plansza etapu wydarzenia (pusta poza wydarzeniem) i numer tego etapu.
+var event_level := {}
+var event_stage := 0
+# Pomoc kupiona na ten etap (zuzywa ja nastepne wejscie na plansze) i rosliny
+# wylosowane na etap Narzuconej talii.
+var event_help_active := false
+var event_forced_plants: Array = []
 
 # Talia na biezaca gre - ustawiana przez ekran wyboru talii (PlantSelect),
 # odczytywana przez main.gd przy budowie paska roslin.
@@ -39,9 +79,46 @@ var rubies := 0
 var ruby_levels: Array = []
 var endless_ruby_awarded := false
 
+# Roslimonety: ze skrzyn i z wygranych gier zespolowych.
+var plant_coins := 0
+# Otwarte skrzynie: numery poziomow, przed ktorymi stoja na sciezce.
+var opened_chests: Array = []
+var fertilizer_limit := FERTILIZER_START_LIMIT
+
+# Ogrod: sadzonki, pola {"state", "end" (czas Unix konca wzrostu)} i czas
+# powrotu pszczolki (0 = jeszcze nie ustalony).
+var saplings := 0
+var garden_plots: Array = []
+var next_bee_time := 0
+
+# Wydarzenie czasowe: indeks w EventData.ROTATION, czas startu (0 = czeka na
+# start) i ukonczone etapy. Postepy znikaja razem z wydarzeniem.
+var event_index := 0
+var event_started := 0
+var event_completed_stages: Array = []
+# Wyscig: najlepsze gwiazdki na etap (String(etap) -> 1-3).
+var event_stars: Dictionary = {}
+# Lowy: suma monet z tygodnia i liczba osiagnietych progow.
+var event_hunt_coins := 0
+var event_hunt_thresholds := 0
+# Sadzenie razem: wybor gracza ("" = jeszcze nie zapytany, "yes", "no"), zbiory
+# obojga, czy cel juz wyplacony i kiedy poszedl darmowy prezent (dzien Unix).
+var shared_choice := ""
+var shared_my_harvests := 0
+var shared_friend_harvests := 0
+var shared_goal_paid := false
+var shared_gift_day := 0
+
 # Rosliny, w ktorych kolko na sciezce gracz juz "wszedl" (indeksy w PlantData.TYPES).
 # Rosliny z unlock_level 1 sa dostepne od startu i nie trzeba ich odbierac.
 var claimed_plants: Array = []
+
+# Ikonki roslin (notatki 2026-10-30): dwie startowe sa dostepne od razu, kolejne
+# zablokowane, dopoki gracz nie odblokuje rosliny, a potem trzeba je odblokowac
+# w kilku krokach. unlocked_icons to indeksy w PlantData.TYPES,
+# icon_unlock_steps: String(indeks) -> wykonane kroki.
+var unlocked_icons: Array = []
+var icon_unlock_steps: Dictionary = {}
 
 # Konta: lista {"id": String, "name": String, "icon": int}. Nazwa i ikona
 # (indeks rosliny w PlantData.TYPES) sa trzymane tutaj, a nie w pliku
@@ -71,7 +148,22 @@ func _reset_progress() -> void:
 	endless_best = 0
 	rubies = 0
 	endless_ruby_awarded = false
+	plant_coins = 0
+	opened_chests = []
+	fertilizer_limit = FERTILIZER_START_LIMIT
+	saplings = 0
+	garden_plots = []
+	for i in range(GARDEN_PLOTS):
+		garden_plots.append({"state": PLOT_EMPTY, "end": 0})
+	next_bee_time = 0
+	event_index = 0
+	event_started = 0
+	event_level = {}
+	event_help_active = false
+	_reset_event_progress()
 	claimed_plants = []
+	unlocked_icons = []
+	icon_unlock_steps = {}
 	player_name = DEFAULT_PLAYER_NAME
 	player_icon = 0
 
@@ -170,7 +262,252 @@ func select_profile(id: String) -> void:
 			player_name = p["name"]
 			player_icon = p["icon"]
 			load_progress()
+			# Konta sprzed blokady ikonek zachowuja ikone, ktora juz wybraly.
+			if not is_icon_unlocked(player_icon):
+				unlocked_icons.append(player_icon)
+				save_progress()
+			refresh_event()
 			return
+
+func current_level() -> Dictionary:
+	if not event_level.is_empty():
+		return event_level
+	return team_level if not team_level.is_empty() else LevelData.LEVELS[current_level_index]
+
+func _now() -> int:
+	return int(Time.get_unix_time_from_system())
+
+# --- Wydarzenie czasowe ---
+# Po uplywie tygodnia wydarzenie znika z postepami, a startuje nastepne. Gdy
+# nastepnego jeszcze nie ma, indeks na nie czeka - pojawi sie po dopisaniu do
+# EventData.ROTATION w aktualizacji gry.
+func refresh_event() -> void:
+	var changed := false
+	if event_started > 0 and _now() - event_started >= EventData.DURATION_DAYS * 86400:
+		event_index += 1
+		event_started = 0
+		_reset_event_progress()
+		changed = true
+	if event_started == 0 and event_index < EventData.ROTATION.size():
+		event_started = _now()
+		changed = true
+	if changed:
+		save_progress()
+
+func current_event() -> Dictionary:
+	if event_started == 0 or event_index >= EventData.ROTATION.size():
+		return {}
+	return EventData.ROTATION[event_index]
+
+func event_seconds_left() -> int:
+	return max(0, EventData.DURATION_DAYS * 86400 - (_now() - event_started))
+
+func _reset_event_progress() -> void:
+	event_completed_stages = []
+	event_stars = {}
+	event_hunt_coins = 0
+	event_hunt_thresholds = 0
+	shared_choice = ""
+	shared_my_harvests = 0
+	shared_friend_harvests = 0
+	shared_goal_paid = false
+	shared_gift_day = 0
+
+func is_event_stage_open(stage: int) -> bool:
+	# Lowy: mozna grac dowolny etap, bo liczy sie suma monet.
+	if current_event().get("coin_hunt", false):
+		return true
+	return stage == 0 or event_completed_stages.has(stage - 1)
+
+# Przygotowuje etap. Pomoc pobiera roslimonety; bez nich etap nie startuje.
+func start_event_game(stage: int, with_help := false) -> bool:
+	var event := current_event()
+	if with_help:
+		var cost: int = event["help"]["cost"]
+		if plant_coins < cost:
+			return false
+		plant_coins -= cost
+		save_progress()
+	event_help_active = with_help
+	event_stage = stage
+	current_level_index = EventData.STAGES[stage]["level_idx"]
+	current_loadout = []
+	event_level = LevelData.event_level(event, stage)
+	if event.get("forced_deck", false):
+		event_forced_plants = _random_forced_deck(stage)
+	return true
+
+# Narzucona talia: zawsze zrodlo wody (na trudniejszych etapach takze
+# Megakaktus) i 2 losowe rosliny, bez Pnaczy, ktore nie zawsze maja na czym rosnac.
+func _random_forced_deck(stage: int) -> Array:
+	var water_plants := []
+	var others := []
+	for i in range(PlantData.TYPES.size()):
+		var role: String = PlantData.TYPES[i]["role"]
+		if role == "generator":
+			if PlantData.TYPES[i]["cost"] <= 25 or stage >= 3:
+				water_plants.append(i)
+		elif role != "vines":
+			others.append(i)
+	others.shuffle()
+	var deck := [water_plants.pick_random(), others[0], others[1]]
+	deck.sort()
+	return deck
+
+func is_event_game() -> bool:
+	return not event_level.is_empty()
+
+func clear_event_game() -> void:
+	event_level = {}
+
+# Wygrany etap: nagroda zalezna od wydarzenia. Zwraca {"saplings", "rubies"}.
+# stars: gwiazdki z Wyscigu (0 w innych wydarzeniach).
+func complete_event_stage(stars := 0) -> Dictionary:
+	var event := current_event()
+	var first_win: bool = not event_completed_stages.has(event_stage)
+	var reward := {"saplings": 0, "rubies": 0}
+	if first_win:
+		event_completed_stages.append(event_stage)
+	if event.get("coin_hunt", false):
+		pass
+	elif event.get("time_race", false):
+		# Sadzonki tylko za nowe gwiazdki: po pierwszej w etapie, za kazda kolejna.
+		var best: int = event_stars.get(str(event_stage), 0)
+		reward["saplings"] = max(0, stars - best)
+		event_stars[str(event_stage)] = max(best, stars)
+	else:
+		reward["saplings"] = EventData.STAGES[event_stage]["saplings"] if first_win else EventData.REPLAY_SAPLINGS
+	if first_win and event_stage == EventData.STAGES.size() - 1:
+		reward["rubies"] = event.get("final_rubies", 0)
+	saplings += reward["saplings"]
+	rubies += reward["rubies"]
+	save_progress()
+	return reward
+
+# Moneta z Low: trafia do roslimonet i do sumy tygodnia. Zwraca liczbe sadzonek
+# za progi osiagniete ta moneta.
+func add_hunt_coins(amount: int) -> int:
+	plant_coins += amount
+	event_hunt_coins += amount
+	var gained := 0
+	while event_hunt_thresholds < EventData.HUNT_THRESHOLDS.size():
+		var threshold: Dictionary = EventData.HUNT_THRESHOLDS[event_hunt_thresholds]
+		if event_hunt_coins < threshold["coins"]:
+			break
+		gained += threshold["saplings"]
+		event_hunt_thresholds += 1
+	saplings += gained
+	save_progress()
+	return gained
+
+func spend_coins(amount: int) -> bool:
+	if plant_coins < amount:
+		return false
+	plant_coins -= amount
+	save_progress()
+	return true
+
+# --- Sadzenie razem (opcja w tygodniu Low) ---
+func is_shared_garden_offered() -> bool:
+	return current_event().get("shared_garden", false)
+
+func is_shared_garden_on() -> bool:
+	return is_shared_garden_offered() and shared_choice == "yes"
+
+func set_shared_choice(accepted: bool) -> void:
+	shared_choice = "yes" if accepted else "no"
+	save_progress()
+
+func _today() -> int:
+	return _now() / 86400
+
+func is_free_gift_ready() -> bool:
+	return shared_gift_day != _today()
+
+# Sadzonka dla znajomego: pierwsza danego dnia za darmo, kolejne za roslimonety.
+func pay_for_gift() -> bool:
+	if is_free_gift_ready():
+		shared_gift_day = _today()
+		save_progress()
+		return true
+	return spend_coins(EventData.GIFT_COST)
+
+func receive_gift() -> void:
+	saplings += 1
+	save_progress()
+
+func set_friend_harvests(count: int) -> void:
+	shared_friend_harvests = max(shared_friend_harvests, count)
+	save_progress()
+
+func shared_total_harvests() -> int:
+	return shared_my_harvests + shared_friend_harvests
+
+# Wspolny cel osiagniety: jednorazowa nagroda. Zwraca true, gdy wyplacono ja teraz.
+func try_pay_shared_goal() -> bool:
+	if shared_goal_paid or shared_total_harvests() < EventData.SHARED_GOAL_HARVESTS:
+		return false
+	shared_goal_paid = true
+	saplings += EventData.SHARED_REWARD_SAPLINGS
+	save_progress()
+	return true
+
+# --- Ogrod ---
+func plant_sapling(i: int) -> void:
+	if saplings > 0 and garden_plots[i]["state"] == PLOT_EMPTY:
+		saplings -= 1
+		garden_plots[i]["state"] = PLOT_SAPLING
+		save_progress()
+
+func water_plot(i: int) -> void:
+	if garden_plots[i]["state"] == PLOT_SAPLING:
+		garden_plots[i]["state"] = PLOT_GROWING
+		garden_plots[i]["end"] = _now() + GARDEN_GROW_SECONDS
+		save_progress()
+
+func plot_seconds_left(i: int) -> int:
+	return max(0, int(garden_plots[i]["end"]) - _now())
+
+# Postep wzrostu od 0 do 1.
+func plot_growth(i: int) -> float:
+	return 1.0 - plot_seconds_left(i) / float(GARDEN_GROW_SECONDS)
+
+func rush_plot(i: int) -> bool:
+	if garden_plots[i]["state"] != PLOT_GROWING or rubies < GARDEN_RUSH_RUBIES:
+		return false
+	rubies -= GARDEN_RUSH_RUBIES
+	garden_plots[i]["end"] = _now()
+	save_progress()
+	return true
+
+func is_bee_here() -> bool:
+	if next_bee_time == 0:
+		_schedule_bee()
+	return _now() >= next_bee_time
+
+func _schedule_bee() -> void:
+	next_bee_time = _now() + randi_range(BEE_RETURN_MIN_SECONDS, BEE_RETURN_MAX_SECONDS)
+	save_progress()
+
+func use_bee(i: int) -> void:
+	if garden_plots[i]["state"] != PLOT_GROWING or not is_bee_here():
+		return
+	garden_plots[i]["end"] = int(garden_plots[i]["end"]) - GARDEN_BEE_SECONDS
+	_schedule_bee()
+
+# Dorosle roslinki daja roslimonety i znikaja. Zwraca numery tych pol.
+func harvest_ready_plots() -> Array:
+	var harvested := []
+	for i in range(garden_plots.size()):
+		if garden_plots[i]["state"] == PLOT_GROWING and plot_seconds_left(i) == 0:
+			garden_plots[i] = {"state": PLOT_EMPTY, "end": 0}
+			plant_coins += GARDEN_HARVEST_COINS
+			if is_shared_garden_on():
+				shared_my_harvests += 1
+			harvested.append(i)
+	if not harvested.is_empty():
+		save_progress()
+	return harvested
 
 # Poziom jest otwarty, gdy poprzedni zostal ukonczony i gracz odebral
 # wszystkie rosliny, ktorych kolka stoja na sciezce tuz przed nim.
@@ -212,6 +549,102 @@ func claim_plant(plant_idx: int) -> void:
 		return
 	claimed_plants.append(plant_idx)
 	save_progress()
+
+# --- Skrzynie ---
+# Numery poziomow, przed ktorymi stoja skrzynie: w co drugiej przerwie miedzy
+# roslinami (zaczynajac od tej przed pierwsza), w polowie drogi.
+func chest_levels() -> Array:
+	var stops := [LEVEL_COUNT]
+	for pt in PlantData.TYPES:
+		if not stops.has(pt.get("unlock_level", 1)):
+			stops.append(pt.get("unlock_level", 1))
+	stops.sort()
+	var result := []
+	for i in range(0, stops.size() - 1, 2):
+		result.append(roundi((stops[i] + stops[i + 1]) / 2.0))
+	return result
+
+# Skrzynia nie blokuje sciezki: mozna ja otworzyc w dowolnej chwili po
+# ukonczeniu poziomu przed nia.
+func is_chest_claimable(chest_level: int) -> bool:
+	return is_level_completed(chest_level - 2) and not opened_chests.has(chest_level)
+
+# Losuje i od razu zapisuje nagrode. Zwraca {"rubies", "coins"}.
+func open_chest(chest_level: int) -> Dictionary:
+	if not is_chest_claimable(chest_level):
+		return {}
+	var reward := {"rubies": _weighted_pick(CHEST_RUBY_WEIGHTS), "coins": _weighted_pick(CHEST_COIN_WEIGHTS)}
+	opened_chests.append(chest_level)
+	rubies += reward["rubies"]
+	plant_coins += reward["coins"]
+	save_progress()
+	return reward
+
+func _weighted_pick(weights: Dictionary) -> int:
+	var total := 0
+	for weight in weights.values():
+		total += weight
+	var roll := randi_range(1, total)
+	for value in weights.keys():
+		roll -= weights[value]
+		if roll <= 0:
+			return value
+	return weights.keys()[0]
+
+func award_team_win() -> void:
+	rubies += TEAM_WIN_RUBIES
+	plant_coins += TEAM_WIN_COINS
+	save_progress()
+
+# --- Limit nawozow ---
+# Cena kolejnego zwiekszenia limitu; -1, gdy limit jest juz najwiekszy.
+func next_fertilizer_limit_price() -> int:
+	var bought := fertilizer_limit - FERTILIZER_START_LIMIT
+	return FERTILIZER_LIMIT_PRICES[bought] if bought < FERTILIZER_LIMIT_PRICES.size() else -1
+
+func buy_fertilizer_limit() -> bool:
+	var price := next_fertilizer_limit_price()
+	if price < 0 or rubies < price:
+		return false
+	rubies -= price
+	fertilizer_limit += 1
+	save_progress()
+	return true
+
+func is_icon_unlocked(icon_idx: int) -> bool:
+	return PlantData.TYPES[icon_idx].get("unlock_level", 1) <= 1 or unlocked_icons.has(icon_idx)
+
+# Ile krokow kosztuje ikonka - im pozniejsza roslina, tym wiecej.
+func icon_steps_required(plant_idx: int) -> int:
+	var unlock_level: int = PlantData.TYPES[plant_idx].get("unlock_level", 1)
+	if unlock_level <= 11:
+		return 2
+	return 3 if unlock_level <= 34 else 5
+
+func icon_steps_done(plant_idx: int) -> int:
+	return icon_unlock_steps.get(str(plant_idx), 0)
+
+# Zalicza krok; ostatni wymagany odblokowuje ikonke. Ikonki rosliny, ktorej
+# gracz jeszcze nie ma, nie da sie odblokowac.
+func record_icon_step(plant_idx: int) -> void:
+	if not is_plant_unlocked(plant_idx) or is_icon_unlocked(plant_idx):
+		return
+	var done := icon_steps_done(plant_idx) + 1
+	if done >= icon_steps_required(plant_idx):
+		unlocked_icons.append(plant_idx)
+		icon_unlock_steps.erase(str(plant_idx))
+	else:
+		icon_unlock_steps[str(plant_idx)] = done
+	save_progress()
+
+# Poziom gry zespolowej: najdalszy otwarty poziom zapraszajacego (bez trybu
+# nieskonczonego).
+func team_level_index() -> int:
+	var best := 0
+	for i in range(LevelData.LEVELS.size()):
+		if is_level_unlocked(i) and not is_endless_level(i):
+			best = i
+	return best
 
 func unlocked_plant_indices() -> Array:
 	var result := []
@@ -263,7 +696,7 @@ func set_player(new_name: String, icon_idx: int) -> bool:
 	if is_profile_name_taken(new_name, current_profile_id):
 		return false
 	player_name = _clean_name(new_name)
-	if is_plant_unlocked(icon_idx):
+	if is_icon_unlocked(icon_idx):
 		player_icon = icon_idx
 	for p in profiles:
 		if p["id"] == current_profile_id:
@@ -296,6 +729,25 @@ func save_progress() -> void:
 		"ruby_levels": ruby_levels,
 		"endless_ruby_awarded": endless_ruby_awarded,
 		"claimed_plants": claimed_plants,
+		"plant_coins": plant_coins,
+		"opened_chests": opened_chests,
+		"fertilizer_limit": fertilizer_limit,
+		"saplings": saplings,
+		"garden_plots": garden_plots,
+		"next_bee_time": next_bee_time,
+		"event_index": event_index,
+		"event_started": event_started,
+		"event_completed_stages": event_completed_stages,
+		"event_stars": event_stars,
+		"event_hunt_coins": event_hunt_coins,
+		"event_hunt_thresholds": event_hunt_thresholds,
+		"shared_choice": shared_choice,
+		"shared_my_harvests": shared_my_harvests,
+		"shared_friend_harvests": shared_friend_harvests,
+		"shared_goal_paid": shared_goal_paid,
+		"shared_gift_day": shared_gift_day,
+		"unlocked_icons": unlocked_icons,
+		"icon_unlock_steps": icon_unlock_steps,
 	}
 	var file := FileAccess.open(_save_path(), FileAccess.WRITE)
 	if file:
@@ -319,7 +771,9 @@ func load_progress() -> void:
 
 	if not parsed.has("version"):
 		_migrate_old_save(parsed)
-		_migrate_to_v3()
+		_migrate_rubies_to_v3()
+		_double_levels_to_v4()
+		_claim_passed_plants()
 		save_progress()
 		return
 
@@ -332,10 +786,15 @@ func load_progress() -> void:
 	if typeof(loaded_best) == TYPE_FLOAT or typeof(loaded_best) == TYPE_INT:
 		endless_best = max(0, int(loaded_best))
 
-	if int(parsed.get("version", 0)) < 3:
-		_migrate_to_v3()
+	var version := int(parsed.get("version", 0))
+	if version < 3:
+		_migrate_rubies_to_v3()
 	else:
 		_load_v3_fields(parsed)
+	if version < 4:
+		_double_levels_to_v4()
+	if version < 3:
+		_claim_passed_plants()
 
 	# Talie wczytujemy na koncu - _sanitize_loadout sprawdza odblokowanie
 	# roslin, wiec claimed_plants musi juz byc wczytane.
@@ -343,11 +802,17 @@ func load_progress() -> void:
 	if loaded_loadouts is Dictionary:
 		for key in loaded_loadouts.keys():
 			var raw = loaded_loadouts[key]
-			if raw is Array:
-				loadouts[str(key)] = _sanitize_loadout(raw)
+			if not (raw is Array):
+				continue
+			for new_key in _migrated_loadout_keys(str(key), version):
+				loadouts[new_key] = _sanitize_loadout(raw)
 
-	if int(parsed.get("version", 0)) < 3:
+	if version < SAVE_VERSION:
 		save_progress()
+
+func _loaded_int(parsed: Dictionary, key: String) -> int:
+	var value = parsed.get(key, 0)
+	return max(0, int(value)) if typeof(value) == TYPE_FLOAT or typeof(value) == TYPE_INT else 0
 
 func _load_v3_fields(parsed: Dictionary) -> void:
 	var loaded_rubies = parsed.get("rubies", 0)
@@ -361,6 +826,48 @@ func _load_v3_fields(parsed: Dictionary) -> void:
 
 	endless_ruby_awarded = bool(parsed.get("endless_ruby_awarded", false))
 
+	var loaded_coins = parsed.get("plant_coins", 0)
+	if typeof(loaded_coins) == TYPE_FLOAT or typeof(loaded_coins) == TYPE_INT:
+		plant_coins = max(0, int(loaded_coins))
+
+	var loaded_limit = parsed.get("fertilizer_limit", FERTILIZER_START_LIMIT)
+	if typeof(loaded_limit) == TYPE_FLOAT or typeof(loaded_limit) == TYPE_INT:
+		fertilizer_limit = clampi(int(loaded_limit), FERTILIZER_START_LIMIT, FERTILIZER_START_LIMIT + FERTILIZER_LIMIT_PRICES.size())
+
+	saplings = _loaded_int(parsed, "saplings")
+	next_bee_time = _loaded_int(parsed, "next_bee_time")
+	event_index = _loaded_int(parsed, "event_index")
+	event_started = _loaded_int(parsed, "event_started")
+	event_hunt_coins = _loaded_int(parsed, "event_hunt_coins")
+	event_hunt_thresholds = _loaded_int(parsed, "event_hunt_thresholds")
+	shared_my_harvests = _loaded_int(parsed, "shared_my_harvests")
+	shared_friend_harvests = _loaded_int(parsed, "shared_friend_harvests")
+	shared_gift_day = _loaded_int(parsed, "shared_gift_day")
+	shared_goal_paid = bool(parsed.get("shared_goal_paid", false))
+	shared_choice = str(parsed.get("shared_choice", ""))
+	var loaded_stars = parsed.get("event_stars", {})
+	if loaded_stars is Dictionary:
+		for key in loaded_stars.keys():
+			if typeof(loaded_stars[key]) == TYPE_FLOAT or typeof(loaded_stars[key]) == TYPE_INT:
+				event_stars[str(key)] = int(loaded_stars[key])
+	var loaded_stages = parsed.get("event_completed_stages", [])
+	if loaded_stages is Array:
+		for v in loaded_stages:
+			if typeof(v) == TYPE_FLOAT or typeof(v) == TYPE_INT:
+				event_completed_stages.append(int(v))
+	var loaded_plots = parsed.get("garden_plots", [])
+	if loaded_plots is Array:
+		for i in range(min(loaded_plots.size(), GARDEN_PLOTS)):
+			var plot = loaded_plots[i]
+			if plot is Dictionary and [PLOT_EMPTY, PLOT_SAPLING, PLOT_GROWING].has(plot.get("state")):
+				garden_plots[i] = {"state": plot["state"], "end": int(plot.get("end", 0))}
+
+	var loaded_chests = parsed.get("opened_chests", [])
+	if loaded_chests is Array:
+		for v in loaded_chests:
+			if (typeof(v) == TYPE_FLOAT or typeof(v) == TYPE_INT) and not opened_chests.has(int(v)):
+				opened_chests.append(int(v))
+
 	var loaded_claimed = parsed.get("claimed_plants", [])
 	if loaded_claimed is Array:
 		for v in loaded_claimed:
@@ -370,15 +877,54 @@ func _load_v3_fields(parsed: Dictionary) -> void:
 			if idx >= 0 and idx < PlantData.TYPES.size() and not claimed_plants.has(idx):
 				claimed_plants.append(idx)
 
-# Zapis sprzed wersji 3 nie zna rubinow ani odbierania roslin: rosliny, ktore
-# wg starej zasady byly juz odblokowane (poziom przed nimi ukonczony), uznajemy
-# za odebrane, a za kazdy ukonczony poziom (i rekord trybu nieskonczonego)
-# dajemy rubin, ktory by sie nalezal.
-func _migrate_to_v3() -> void:
+	var loaded_icons = parsed.get("unlocked_icons", [])
+	if loaded_icons is Array:
+		for v in loaded_icons:
+			if typeof(v) != TYPE_FLOAT and typeof(v) != TYPE_INT:
+				continue
+			var idx := int(v)
+			if idx >= 0 and idx < PlantData.TYPES.size() and not unlocked_icons.has(idx):
+				unlocked_icons.append(idx)
+
+	var loaded_steps = parsed.get("icon_unlock_steps", {})
+	if loaded_steps is Dictionary:
+		for key in loaded_steps.keys():
+			var count = loaded_steps[key]
+			if typeof(count) == TYPE_FLOAT or typeof(count) == TYPE_INT:
+				icon_unlock_steps[str(key)] = max(0, int(count))
+
+# Pod jakimi kluczami talia ze starego zapisu trafia do obecnego. Tryb
+# nieskonczony przesuwa sie na koniec sciezki.
+func _migrated_loadout_keys(key: String, version: int) -> Array:
+	if version >= SAVE_VERSION or not key.is_valid_int():
+		return [key]
+	var level := key.to_int()
+	if version < 4:
+		if level == OLD_LEVEL_COUNT:
+			return [str(LEVEL_COUNT)]
+		return [str(level * 2), str(level * 2 + 1)]
+	return [str(LEVEL_COUNT)] if level == V4_ENDLESS_INDEX else [key]
+
+# Zapis sprzed wersji 4 mial 28 poziomow, a kazdy z nich dal dwa nowe: postep
+# przechodzi na oba, bez nowych rubinow za te, ktore gracz juz dostal.
+func _double_levels_to_v4() -> void:
+	for i in range(OLD_LEVEL_COUNT - 1, -1, -1):
+		completed_levels[i * 2 + 1] = completed_levels[i]
+		completed_levels[i * 2] = completed_levels[i]
+		ruby_levels[i * 2 + 1] = ruby_levels[i]
+		ruby_levels[i * 2] = ruby_levels[i]
+
+# Zapis sprzed wersji 3 nie zna odbierania roslin: rosliny, przed ktorymi poziom
+# jest ukonczony, uznajemy za odebrane.
+func _claim_passed_plants() -> void:
 	for p_idx in range(PlantData.TYPES.size()):
 		var unlock_level: int = PlantData.TYPES[p_idx].get("unlock_level", 1)
 		if unlock_level > 1 and is_level_completed(unlock_level - 2) and not claimed_plants.has(p_idx):
 			claimed_plants.append(p_idx)
+
+# Zapis sprzed wersji 3 nie zna rubinow: za kazdy ukonczony poziom (i rekord
+# trybu nieskonczonego) dajemy rubin, ktory by sie nalezal.
+func _migrate_rubies_to_v3() -> void:
 	for i in range(completed_levels.size()):
 		if completed_levels[i] and not ruby_levels[i]:
 			ruby_levels[i] = true
