@@ -7,9 +7,25 @@ const PROFILES_PATH := "user://profiles.json"
 const PROFILE_SAVE_PATH := "user://save_%s.json"
 const LEGACY_SAVE_PATH := "user://savegame.json"
 const MAX_PROFILES := 6
-const SAVE_VERSION := 3
-const LEVEL_COUNT := 28
+const SAVE_VERSION := 4
+const LEVEL_COUNT := 56
 const MAX_LOADOUT := 6
+# Poziomy z zapisow sprzed wersji 4 (kazdy dal potem dwa nowe poziomy).
+const OLD_LEVEL_COUNT := 28
+
+# Skrzynie na sciezce: {wartosc: waga} - nizsze wartosci sa bardziej
+# prawdopodobne.
+const CHEST_RUBY_WEIGHTS := {1: 60, 2: 30, 3: 10}
+const CHEST_COIN_WEIGHTS := {100: 40, 150: 28, 200: 18, 250: 10, 300: 4}
+
+# Nagroda za wygrana gre zespolowa, dla obu graczy.
+const TEAM_WIN_RUBIES := 1
+const TEAM_WIN_COINS := 50
+
+# Limit nawozow: startowy, a kolejne zwiekszenia w sklepie po tych cenach
+# (w rubinach) - az do 6.
+const FERTILIZER_START_LIMIT := 2
+const FERTILIZER_LIMIT_PRICES := [5, 6, 7, 8]
 
 # Tryb nieskonczony daje rubin (jeden raz), gdy gracz pokona w jednej grze
 # co najmniej tylu wrogow ("umowiona ilosc punktow" z notatek 2026-10-06).
@@ -18,6 +34,8 @@ const DEFAULT_PLAYER_NAME := "Gracz"
 const PLAYER_NAME_MAX_LENGTH := 14
 
 var current_level_index := 0
+# Plansza gry zespolowej (pusta poza gra zespolowa) - patrz current_level().
+var team_level := {}
 
 # Talia na biezaca gre - ustawiana przez ekran wyboru talii (PlantSelect),
 # odczytywana przez main.gd przy budowie paska roslin.
@@ -38,6 +56,12 @@ var endless_best := 0
 var rubies := 0
 var ruby_levels: Array = []
 var endless_ruby_awarded := false
+
+# Roslimonety: ze skrzyn i z wygranych gier zespolowych.
+var plant_coins := 0
+# Otwarte skrzynie: numery poziomow, przed ktorymi stoja na sciezce.
+var opened_chests: Array = []
+var fertilizer_limit := FERTILIZER_START_LIMIT
 
 # Rosliny, w ktorych kolko na sciezce gracz juz "wszedl" (indeksy w PlantData.TYPES).
 # Rosliny z unlock_level 1 sa dostepne od startu i nie trzeba ich odbierac.
@@ -78,6 +102,9 @@ func _reset_progress() -> void:
 	endless_best = 0
 	rubies = 0
 	endless_ruby_awarded = false
+	plant_coins = 0
+	opened_chests = []
+	fertilizer_limit = FERTILIZER_START_LIMIT
 	claimed_plants = []
 	unlocked_icons = []
 	icon_unlock_steps = {}
@@ -185,6 +212,9 @@ func select_profile(id: String) -> void:
 				save_progress()
 			return
 
+func current_level() -> Dictionary:
+	return team_level if not team_level.is_empty() else LevelData.LEVELS[current_level_index]
+
 # Poziom jest otwarty, gdy poprzedni zostal ukonczony i gracz odebral
 # wszystkie rosliny, ktorych kolka stoja na sciezce tuz przed nim.
 func is_level_unlocked(i: int) -> bool:
@@ -226,15 +256,76 @@ func claim_plant(plant_idx: int) -> void:
 	claimed_plants.append(plant_idx)
 	save_progress()
 
+# --- Skrzynie ---
+# Numery poziomow, przed ktorymi stoja skrzynie: po jednej miedzy kolejnymi
+# roslinami (i przed pierwsza), w polowie drogi.
+func chest_levels() -> Array:
+	var stops := [LEVEL_COUNT]
+	for pt in PlantData.TYPES:
+		if not stops.has(pt.get("unlock_level", 1)):
+			stops.append(pt.get("unlock_level", 1))
+	stops.sort()
+	var result := []
+	for i in range(stops.size() - 1):
+		result.append(roundi((stops[i] + stops[i + 1]) / 2.0))
+	return result
+
+# Skrzynia nie blokuje sciezki: mozna ja otworzyc w dowolnej chwili po
+# ukonczeniu poziomu przed nia.
+func is_chest_claimable(chest_level: int) -> bool:
+	return is_level_completed(chest_level - 2) and not opened_chests.has(chest_level)
+
+# Losuje i od razu zapisuje nagrode. Zwraca {"rubies", "coins"}.
+func open_chest(chest_level: int) -> Dictionary:
+	if not is_chest_claimable(chest_level):
+		return {}
+	var reward := {"rubies": _weighted_pick(CHEST_RUBY_WEIGHTS), "coins": _weighted_pick(CHEST_COIN_WEIGHTS)}
+	opened_chests.append(chest_level)
+	rubies += reward["rubies"]
+	plant_coins += reward["coins"]
+	save_progress()
+	return reward
+
+func _weighted_pick(weights: Dictionary) -> int:
+	var total := 0
+	for weight in weights.values():
+		total += weight
+	var roll := randi_range(1, total)
+	for value in weights.keys():
+		roll -= weights[value]
+		if roll <= 0:
+			return value
+	return weights.keys()[0]
+
+func award_team_win() -> void:
+	rubies += TEAM_WIN_RUBIES
+	plant_coins += TEAM_WIN_COINS
+	save_progress()
+
+# --- Limit nawozow ---
+# Cena kolejnego zwiekszenia limitu; -1, gdy limit jest juz najwiekszy.
+func next_fertilizer_limit_price() -> int:
+	var bought := fertilizer_limit - FERTILIZER_START_LIMIT
+	return FERTILIZER_LIMIT_PRICES[bought] if bought < FERTILIZER_LIMIT_PRICES.size() else -1
+
+func buy_fertilizer_limit() -> bool:
+	var price := next_fertilizer_limit_price()
+	if price < 0 or rubies < price:
+		return false
+	rubies -= price
+	fertilizer_limit += 1
+	save_progress()
+	return true
+
 func is_icon_unlocked(icon_idx: int) -> bool:
 	return PlantData.TYPES[icon_idx].get("unlock_level", 1) <= 1 or unlocked_icons.has(icon_idx)
 
 # Ile krokow kosztuje ikonka - im pozniejsza roslina, tym wiecej.
 func icon_steps_required(plant_idx: int) -> int:
 	var unlock_level: int = PlantData.TYPES[plant_idx].get("unlock_level", 1)
-	if unlock_level <= 5:
+	if unlock_level <= 11:
 		return 2
-	return 3 if unlock_level <= 15 else 5
+	return 3 if unlock_level <= 34 else 5
 
 func icon_steps_done(plant_idx: int) -> int:
 	return icon_unlock_steps.get(str(plant_idx), 0)
@@ -344,6 +435,9 @@ func save_progress() -> void:
 		"ruby_levels": ruby_levels,
 		"endless_ruby_awarded": endless_ruby_awarded,
 		"claimed_plants": claimed_plants,
+		"plant_coins": plant_coins,
+		"opened_chests": opened_chests,
+		"fertilizer_limit": fertilizer_limit,
 		"unlocked_icons": unlocked_icons,
 		"icon_unlock_steps": icon_unlock_steps,
 	}
@@ -369,7 +463,9 @@ func load_progress() -> void:
 
 	if not parsed.has("version"):
 		_migrate_old_save(parsed)
-		_migrate_to_v3()
+		_migrate_rubies_to_v3()
+		_double_levels_to_v4()
+		_claim_passed_plants()
 		save_progress()
 		return
 
@@ -382,10 +478,15 @@ func load_progress() -> void:
 	if typeof(loaded_best) == TYPE_FLOAT or typeof(loaded_best) == TYPE_INT:
 		endless_best = max(0, int(loaded_best))
 
-	if int(parsed.get("version", 0)) < 3:
-		_migrate_to_v3()
+	var version := int(parsed.get("version", 0))
+	if version < 3:
+		_migrate_rubies_to_v3()
 	else:
 		_load_v3_fields(parsed)
+	if version < 4:
+		_double_levels_to_v4()
+	if version < 3:
+		_claim_passed_plants()
 
 	# Talie wczytujemy na koncu - _sanitize_loadout sprawdza odblokowanie
 	# roslin, wiec claimed_plants musi juz byc wczytane.
@@ -393,10 +494,16 @@ func load_progress() -> void:
 	if loaded_loadouts is Dictionary:
 		for key in loaded_loadouts.keys():
 			var raw = loaded_loadouts[key]
-			if raw is Array:
+			if not (raw is Array):
+				continue
+			if version < 4 and str(key).is_valid_int():
+				var old_level := str(key).to_int()
+				loadouts[str(old_level * 2)] = _sanitize_loadout(raw)
+				loadouts[str(old_level * 2 + 1)] = _sanitize_loadout(raw)
+			else:
 				loadouts[str(key)] = _sanitize_loadout(raw)
 
-	if int(parsed.get("version", 0)) < 3:
+	if version < 4:
 		save_progress()
 
 func _load_v3_fields(parsed: Dictionary) -> void:
@@ -410,6 +517,20 @@ func _load_v3_fields(parsed: Dictionary) -> void:
 			ruby_levels[i] = bool(loaded_ruby_levels[i])
 
 	endless_ruby_awarded = bool(parsed.get("endless_ruby_awarded", false))
+
+	var loaded_coins = parsed.get("plant_coins", 0)
+	if typeof(loaded_coins) == TYPE_FLOAT or typeof(loaded_coins) == TYPE_INT:
+		plant_coins = max(0, int(loaded_coins))
+
+	var loaded_limit = parsed.get("fertilizer_limit", FERTILIZER_START_LIMIT)
+	if typeof(loaded_limit) == TYPE_FLOAT or typeof(loaded_limit) == TYPE_INT:
+		fertilizer_limit = clampi(int(loaded_limit), FERTILIZER_START_LIMIT, FERTILIZER_START_LIMIT + FERTILIZER_LIMIT_PRICES.size())
+
+	var loaded_chests = parsed.get("opened_chests", [])
+	if loaded_chests is Array:
+		for v in loaded_chests:
+			if (typeof(v) == TYPE_FLOAT or typeof(v) == TYPE_INT) and not opened_chests.has(int(v)):
+				opened_chests.append(int(v))
 
 	var loaded_claimed = parsed.get("claimed_plants", [])
 	if loaded_claimed is Array:
@@ -436,15 +557,26 @@ func _load_v3_fields(parsed: Dictionary) -> void:
 			if typeof(count) == TYPE_FLOAT or typeof(count) == TYPE_INT:
 				icon_unlock_steps[str(key)] = max(0, int(count))
 
-# Zapis sprzed wersji 3 nie zna rubinow ani odbierania roslin: rosliny, ktore
-# wg starej zasady byly juz odblokowane (poziom przed nimi ukonczony), uznajemy
-# za odebrane, a za kazdy ukonczony poziom (i rekord trybu nieskonczonego)
-# dajemy rubin, ktory by sie nalezal.
-func _migrate_to_v3() -> void:
+# Zapis sprzed wersji 4 mial 28 poziomow, a kazdy z nich dal dwa nowe: postep
+# przechodzi na oba, bez nowych rubinow za te, ktore gracz juz dostal.
+func _double_levels_to_v4() -> void:
+	for i in range(OLD_LEVEL_COUNT - 1, -1, -1):
+		completed_levels[i * 2 + 1] = completed_levels[i]
+		completed_levels[i * 2] = completed_levels[i]
+		ruby_levels[i * 2 + 1] = ruby_levels[i]
+		ruby_levels[i * 2] = ruby_levels[i]
+
+# Zapis sprzed wersji 3 nie zna odbierania roslin: rosliny, przed ktorymi poziom
+# jest ukonczony, uznajemy za odebrane.
+func _claim_passed_plants() -> void:
 	for p_idx in range(PlantData.TYPES.size()):
 		var unlock_level: int = PlantData.TYPES[p_idx].get("unlock_level", 1)
 		if unlock_level > 1 and is_level_completed(unlock_level - 2) and not claimed_plants.has(p_idx):
 			claimed_plants.append(p_idx)
+
+# Zapis sprzed wersji 3 nie zna rubinow: za kazdy ukonczony poziom (i rekord
+# trybu nieskonczonego) dajemy rubin, ktory by sie nalezal.
+func _migrate_rubies_to_v3() -> void:
 	for i in range(completed_levels.size()):
 		if completed_levels[i] and not ruby_levels[i]:
 			ruby_levels[i] = true

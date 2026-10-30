@@ -14,7 +14,7 @@ extends RefCounted
 # ma w niej nowej kupki smieci - "junk_pile_waves" zaczyna sie od 1). main.gd
 # i tak przycina 1. fale do MAX_FIRST_WAVE_ENEMIES, ale dane maja to spelniac.
 #
-# Bossowie: co 3 poziomy (3, 6, 9, ..., 24) i na ostatnim, 28. poziomie.
+# Ponizej sa plansze bazowe; kazda daje dwa poziomy sciezki (patrz _build_levels).
 #
 # Zasada ukladania fal: liczba wrogow w zwyklych falach rosnie lagodnie z
 # poziomem (poz. 1: 1-3 na fale, poz. 17: 5-8 na fale, poz. 28: 7-11).
@@ -23,7 +23,11 @@ extends RefCounted
 # bossem - ok. 1,3x tyle (boss i tak domyka finał).
 # Uwaga: od 3. fali wzwyz main.gd doklada do kazdej fali dodatkowych wrogow
 # (EXTRA_ENEMIES_FROM_WAVE_3), wiec realnie sa one ok. 2x wieksze niz tutaj.
-const LEVELS := [
+# Gra zespolowa ponizej pierwszego poziomu z bossem: slabszy boss.
+const TEAM_FIRST_FULL_BOSS_LEVEL := 5
+const TEAM_EARLY_BOSS_HP := 0.6
+
+const BASE_LEVELS := [
 	{
 		"name": "Poziom 1 - Podworko",
 		"boss": -1,
@@ -425,7 +429,7 @@ const LEVELS := [
 		],
 	},
 	{
-		# Tryb nieskonczony: odblokowuje sie po poziomie 28. Fale (lacznie z
+		# Tryb nieskonczony: odblokowuje sie po ostatnim poziomie. Fale (lacznie z
 		# bossami) generuje main.gd -> _generate_endless_wave(); gra trwa, az
 		# smieci dotra do domu, a wynikiem jest liczba pokonanych wrogow.
 		"name": "Tryb nieskonczony - Wieczna Gora Smieci",
@@ -435,3 +439,70 @@ const LEVELS := [
 		"waves": [],
 	},
 ]
+
+# Sciezka: kazda plansza bazowa daje dwa kolejne poziomy, zeby rosliny mogly
+# odblokowywac sie co ok. 5 poziomow (notatki 2026-10-30), a trudnosc rosla
+# tak samo wzgledem liczby roslin. Druga czesc ma lustrzanie ulozone rzedy i
+# bossa planszy, wiec boss przychodzi co 6 poziomow i na ostatnim. Tryb
+# nieskonczony zostaje na koncu.
+static var LEVELS: Array = _build_levels()
+
+static func _build_levels() -> Array:
+	var result := []
+	for i in range(BASE_LEVELS.size()):
+		var base: Dictionary = BASE_LEVELS[i]
+		if base.get("endless", false):
+			result.append(base)
+			continue
+		var place: String = base["name"].get_slice(" - ", 1)
+		var first: Dictionary = base.duplicate(true)
+		first["name"] = "Poziom %d - %s" % [result.size() + 1, place]
+		first["boss"] = -1
+		first.erase("boss_hp_multiplier")
+		if i > 0:
+			first["cactus_water_multiplier"] = (base["cactus_water_multiplier"] + BASE_LEVELS[i - 1]["cactus_water_multiplier"]) / 2.0
+		result.append(first)
+		var second := _mirrored(base)
+		second["name"] = "Poziom %d - %s II" % [result.size() + 1, place]
+		result.append(second)
+	return result
+
+static func _mirrored(base: Dictionary) -> Dictionary:
+	var level: Dictionary = base.duplicate(true)
+	var last_row := 4
+	for wave in level["waves"]:
+		for enemy in wave:
+			enemy["row"] = last_row - enemy["row"]
+	for tile in level.get("blocked_tiles", []):
+		tile[1] = last_row - tile[1]
+	return level
+
+# Ile nawozow pojawia sie samych na planszy w trakcie poziomu.
+static func fertilizer_count(level_idx: int) -> int:
+	if level_idx < 8:
+		return 0
+	if level_idx < 24:
+		return 1
+	return 2 if level_idx < 40 else 3
+
+# Plansza gry zespolowej: trudnosc poziomu sredniego obu graczy, zawsze z bossem.
+static func team_level(difficulty_idx: int, boss_idx: int) -> Dictionary:
+	var level: Dictionary = LEVELS[difficulty_idx].duplicate(true)
+	level["name"] = "Gra zespolowa"
+	level["boss"] = boss_idx
+	if difficulty_idx < TEAM_FIRST_FULL_BOSS_LEVEL:
+		level["boss_hp_multiplier"] = TEAM_EARLY_BOSS_HP
+	return level
+
+# Losowy boss sposrod tych, ktorych gracze spotkaliby do tej trudnosci.
+static func random_team_boss(difficulty_idx: int) -> int:
+	var bosses := []
+	for i in range(difficulty_idx + 1):
+		var boss: int = LEVELS[i].get("boss", -1)
+		if boss >= 0 and not bosses.has(boss):
+			bosses.append(boss)
+	return bosses.pick_random() if not bosses.is_empty() else 0
+
+# Srednia poziomow obu graczy (np. poziomy 2 i 6 daja poziom 4).
+static func team_difficulty(level_a: int, level_b: int) -> int:
+	return roundi((level_a + level_b) / 2.0)

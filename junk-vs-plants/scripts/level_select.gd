@@ -34,7 +34,9 @@ const GAME_RULES_TEXT := "Smieciostwory ida przez ogrod do domu - nie pozwol im 
 	"Wybierz roslinke z paska po lewej i tapnij pole ogrodu, zeby ja posadzic. " + \
 	"Sadzenie kosztuje krople wody: daja je Kaktusy, a krople zbierasz tapnieciem. " + \
 	"Za kazdy wygrany poziom dostajesz rubin (raz na poziom). " + \
-	"Po niektorych poziomach na sciezce czeka nowa roslinka - wejdz w jej kolko, zeby ja odblokowac."
+	"Co kilka poziomow na sciezce czeka nowa roslinka - wejdz w jej kolko, zeby ja odblokowac. " + \
+	"Miedzy roslinkami stoja skrzynie z rubinami i roslimonetami. " + \
+	"Pokonana roslinka po prostu znika. Nawozy pojawiaja sie same na planszy - tapnij, zeby je zebrac; ich limit zwiekszysz w sklepie."
 const SHOP_OFFERS := [
 	{"rubies": 2, "price": "Reklama"},
 	{"rubies": 10, "price": "5 zl"},
@@ -59,6 +61,9 @@ var level_seq_index: Dictionary = {}
 var level_hit_nodes: Array = []
 # Kolka roslin, w ktore mozna teraz "wejsc": lista {"plant_idx", "rect"}
 var plant_hit_nodes: Array = []
+# Skrzynie, ktore mozna teraz otworzyc: lista {"chest_level", "rect"}
+var chest_hit_nodes: Array = []
+var ruby_label: Label
 
 var min_offset := 0.0
 var max_offset := 0.0
@@ -117,9 +122,12 @@ func _build_node_sequence() -> void:
 				plants_by_level[unlock_level] = []
 			plants_by_level[unlock_level].append(p_idx)
 
+	var chests := GameState.chest_levels()
 	node_sequence.clear()
 	for i in range(LevelData.LEVELS.size()):
 		var level_num := i + 1
+		if chests.has(level_num):
+			node_sequence.append({"kind": "chest", "chest_level": level_num})
 		if plants_by_level.has(level_num):
 			for p_idx in plants_by_level[level_num]:
 				node_sequence.append({"kind": "plant", "plant_idx": p_idx})
@@ -133,6 +141,8 @@ func _build_node_sequence() -> void:
 func _is_node_locked(entry: Dictionary) -> bool:
 	if entry["kind"] == "level":
 		return not GameState.is_level_unlocked(entry["level_idx"])
+	if entry["kind"] == "chest":
+		return not GameState.is_level_completed(entry["chest_level"] - 2)
 	var p_idx: int = entry["plant_idx"]
 	return not (GameState.is_plant_unlocked(p_idx) or GameState.is_plant_claimable(p_idx))
 
@@ -151,11 +161,14 @@ func _build_line_segments() -> void:
 func _build_nodes() -> void:
 	level_hit_nodes.clear()
 	plant_hit_nodes.clear()
+	chest_hit_nodes.clear()
 	for i in range(node_sequence.size()):
 		var entry = node_sequence[i]
 		var x: float = node_x_positions[i]
 		if entry["kind"] == "level":
 			_build_level_node(entry["level_idx"], x)
+		elif entry["kind"] == "chest":
+			_build_chest_node(entry["chest_level"], x)
 		else:
 			_build_plant_node(entry["plant_idx"], x)
 
@@ -319,6 +332,50 @@ func _build_plant_node(plant_idx: int, x: float) -> void:
 	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	path_layer.add_child(name_label)
 
+# Skrzynia: zablokowana (szara), do otwarcia (pulsuje na zloto) albo otwarta
+# (zielona). Nie blokuje sciezki, wiec mozna ja otworzyc takze pozniej.
+func _build_chest_node(chest_level: int, x: float) -> void:
+	var claimable := GameState.is_chest_claimable(chest_level)
+	var opened: bool = GameState.opened_chests.has(chest_level)
+
+	var frame := Panel.new()
+	frame.size = Vector2(PLANT_NODE_SIZE, PLANT_NODE_SIZE)
+	frame.position = Vector2(x - PLANT_NODE_SIZE / 2.0, NODE_Y - PLANT_NODE_SIZE / 2.0)
+	frame.pivot_offset = Vector2(PLANT_NODE_SIZE / 2.0, PLANT_NODE_SIZE / 2.0)
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var color := Color(0.35, 0.35, 0.35)
+	if opened:
+		color = Color(0.55, 0.8, 0.4)
+	elif claimable:
+		color = CLAIMABLE_PLANT_COLOR
+	frame.add_theme_stylebox_override("panel", UiIcons.round_style(color, int(PLANT_NODE_SIZE / 2.0)))
+	path_layer.add_child(frame)
+
+	var icon := UiIcons.chest(PLANT_NODE_SIZE - 18)
+	icon.position = Vector2(9, 9)
+	if not claimable and not opened:
+		icon.modulate = Color(0.5, 0.5, 0.5)
+	frame.add_child(icon)
+
+	if claimable:
+		var tw := frame.create_tween()
+		tw.set_loops()
+		tw.tween_property(frame, "scale", Vector2(1.15, 1.15), 0.5).set_trans(Tween.TRANS_SINE)
+		tw.tween_property(frame, "scale", Vector2(1.0, 1.0), 0.5).set_trans(Tween.TRANS_SINE)
+		chest_hit_nodes.append({
+			"chest_level": chest_level,
+			"rect": Rect2(x - PLANT_NODE_SIZE / 2.0, NODE_Y - PLANT_NODE_SIZE / 2.0, PLANT_NODE_SIZE, PLANT_NODE_SIZE),
+		})
+
+	var name_label := Label.new()
+	name_label.text = "Skrzynia"
+	name_label.position = Vector2(x - 60, NODE_Y + PLANT_NODE_SIZE / 2.0 + 4)
+	name_label.size = Vector2(120, 26)
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_label.add_theme_font_size_override("font_size", 13)
+	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	path_layer.add_child(name_label)
+
 # --- Strzalki na krawedziach: widoczne tylko gdy w dana strone jest jeszcze
 # cos do zobaczenia; tap przesuwa sciezke o szerokosc ekranu. ---
 func _build_arrows() -> void:
@@ -354,12 +411,14 @@ func _update_arrow_visibility() -> void:
 	if arrow_right:
 		arrow_right.visible = path_layer.position.x > min_offset + 1.0
 
-# --- Na starcie sciezka centruje sie na kolku rosliny do odebrania, a jesli
-# takiego nie ma - na aktualnym poziomie. ---
+# --- Na starcie sciezka centruje sie na kolku rosliny albo skrzyni do odebrania,
+# a jesli takiego nie ma - na aktualnym poziomie. ---
 func _current_seq_index() -> int:
 	for i in range(node_sequence.size()):
 		var entry = node_sequence[i]
 		if entry["kind"] == "plant" and GameState.is_plant_claimable(entry["plant_idx"]):
+			return i
+		if entry["kind"] == "chest" and GameState.is_chest_claimable(entry["chest_level"]):
 			return i
 	return level_seq_index[_current_level_index()]
 
@@ -428,6 +487,11 @@ func _handle_tap(pos: Vector2) -> void:
 		if rect.has_point(Vector2(local_x, pos.y)):
 			_show_plant_unlock(node["plant_idx"])
 			return
+	for node in chest_hit_nodes:
+		var rect: Rect2 = node["rect"]
+		if rect.has_point(Vector2(local_x, pos.y)):
+			_show_chest(node["chest_level"])
+			return
 	for node in level_hit_nodes:
 		var rect: Rect2 = node["rect"]
 		if rect.has_point(Vector2(local_x, pos.y)):
@@ -451,7 +515,20 @@ func _build_corner_buttons() -> void:
 	var ruby_icon := UiIcons.ruby(40)
 	ruby_icon.position = Vector2(shop_x - 52, CORNER_MARGIN + (CORNER_BTN_SIZE - 40) / 2.0)
 	add_child(ruby_icon)
-	var ruby_label := Label.new()
+	# Roslimonety - jeszcze dalej na lewo.
+	var coin_icon := UiIcons.plant_coin(40)
+	coin_icon.position = Vector2(shop_x - 190, CORNER_MARGIN + (CORNER_BTN_SIZE - 40) / 2.0)
+	add_child(coin_icon)
+	var coin_label := Label.new()
+	coin_label.text = str(GameState.plant_coins)
+	coin_label.position = Vector2(shop_x - 190 - 110, CORNER_MARGIN + (CORNER_BTN_SIZE - 44) / 2.0)
+	coin_label.size = Vector2(100, 44)
+	coin_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	coin_label.add_theme_font_size_override("font_size", 32)
+	coin_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(coin_label)
+
+	ruby_label = Label.new()
 	ruby_label.text = str(GameState.rubies)
 	ruby_label.position = Vector2(shop_x - 52 - 110, CORNER_MARGIN + (CORNER_BTN_SIZE - 44) / 2.0)
 	ruby_label.size = Vector2(100, 44)
@@ -638,6 +715,39 @@ func _show_plant_unlock(plant_idx: int) -> void:
 		get_tree().reload_current_scene())
 	panel.add_child(ok_btn)
 
+# Skrzynia: nagroda jest losowana i zapisywana od razu po otwarciu, wiec zamkniecie
+# gry w tym okienku nie pozwala losowac od nowa.
+func _show_chest(chest_level: int) -> void:
+	var reward := GameState.open_chest(chest_level)
+	if reward.is_empty():
+		return
+	var panel := _open_popup(Vector2(640, 500), "Skrzynia!", false)
+
+	var icon := UiIcons.chest(170)
+	icon.position = Vector2((panel.size.x - 170) / 2.0, 70)
+	icon.pivot_offset = Vector2(85, 85)
+	icon.scale = Vector2(0.05, 0.05)
+	panel.add_child(icon)
+	var tw := icon.create_tween()
+	tw.tween_property(icon, "scale", Vector2(1, 1), 0.6).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+	_add_reward_row(panel, 150.0, "+%d" % reward["rubies"], UiIcons.ruby(56))
+	_add_reward_row(panel, 340.0, "+%d" % reward["coins"], UiIcons.plant_coin(56))
+
+	var ok_btn := _popup_button("Super!", OK_BTN_COLOR, Vector2((panel.size.x - 220) / 2.0, 400), Vector2(220, 70))
+	ok_btn.pressed.connect(func(): get_tree().reload_current_scene())
+	panel.add_child(ok_btn)
+
+func _add_reward_row(panel: Panel, x: float, amount: String, icon: Control) -> void:
+	var label := _popup_label(amount, 38)
+	label.position = Vector2(x - 20, 290)
+	label.size = Vector2(90, 56)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	panel.add_child(label)
+	icon.position = Vector2(x + 76, 290)
+	panel.add_child(icon)
+
 # "Opis gry": krotkie zasady + funkcje roslin, ktore gracz juz odblokowal.
 func _show_game_info() -> void:
 	var panel := _open_popup(Vector2(900, 600), "Opis gry")
@@ -718,9 +828,10 @@ func _show_my_plants() -> void:
 
 # Sklep: oferty rubinow z notatek 2026-10-06. Zakupy za pieniadze i reklamy
 # wymagaja uslug Google Play (platnosci, AdMob), wiec na razie to tylko
-# podglad ofert z nieaktywnymi przyciskami.
+# podglad ofert z nieaktywnymi przyciskami. Za rubiny dziala zwiekszanie
+# limitu nawozow.
 func _show_shop() -> void:
-	var panel := _open_popup(Vector2(960, 480), "Sklep")
+	var panel := _open_popup(Vector2(960, 640), "Sklep")
 	var card_size := Vector2(160, 220)
 	var gap := 22.0
 	var start_x := (panel.size.x - (SHOP_OFFERS.size() * card_size.x + (SHOP_OFFERS.size() - 1) * gap)) / 2.0
@@ -728,7 +839,7 @@ func _show_shop() -> void:
 	for i in range(SHOP_OFFERS.size()):
 		var offer: Dictionary = SHOP_OFFERS[i]
 		var card := Panel.new()
-		card.position = Vector2(start_x + i * (card_size.x + gap), 100)
+		card.position = Vector2(start_x + i * (card_size.x + gap), 70)
 		card.size = card_size
 		card.add_theme_stylebox_override("panel", UiIcons.round_style(Color(1.0, 0.98, 0.92), 14))
 		panel.add_child(card)
@@ -748,12 +859,56 @@ func _show_shop() -> void:
 		price_btn.disabled = true
 		card.add_child(price_btn)
 
-	var info := _popup_label("Sklep jeszcze nie dziala - zakupy i reklamy dodamy pozniej.", 20)
-	info.position = Vector2(0, 360)
-	info.size = Vector2(panel.size.x, 60)
+	var info := _popup_label("Zakupy za pieniadze i reklamy dodamy pozniej.", 20)
+	info.position = Vector2(0, 298)
+	info.size = Vector2(panel.size.x, 34)
 	info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	info.add_theme_color_override("font_color", Color(0.5, 0.3, 0.2))
 	panel.add_child(info)
+
+	_build_fertilizer_limit_offer(panel)
+
+# Oferta za rubiny: kolejne miejsce na nawoz. Limit najwyzej 6.
+func _build_fertilizer_limit_offer(panel: Panel) -> void:
+	var card := Panel.new()
+	card.position = Vector2(50, 350)
+	card.size = Vector2(panel.size.x - 100, 230)
+	card.add_theme_stylebox_override("panel", UiIcons.round_style(Color(1.0, 0.98, 0.92), 14))
+	panel.add_child(card)
+
+	var icon := TextureRect.new()
+	icon.texture = load("res://assets/sprites/ui/fertilizer.png")
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.size = Vector2(130, 130)
+	icon.position = Vector2(30, 50)
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(icon)
+
+	var title := _popup_label("Limit nawozow: %d" % GameState.fertilizer_limit, 30)
+	title.position = Vector2(190, 44)
+	card.add_child(title)
+
+	var rubies_info := _popup_label("Masz rubinow: %d" % GameState.rubies, 20)
+	rubies_info.position = Vector2(190, 96)
+	card.add_child(rubies_info)
+
+	var price := GameState.next_fertilizer_limit_price()
+	if price < 0:
+		var max_label := _popup_label("Masz juz najwiekszy limit.", 22)
+		max_label.position = Vector2(190, 140)
+		card.add_child(max_label)
+		return
+	var buy_btn := _popup_button("Kup za %d" % price, OK_BTN_COLOR, Vector2(card.size.x - 300, 80), Vector2(220, 70))
+	buy_btn.disabled = GameState.rubies < price
+	buy_btn.pressed.connect(func():
+		if GameState.buy_fertilizer_limit():
+			ruby_label.text = str(GameState.rubies)
+			_show_shop())
+	card.add_child(buy_btn)
+	var ruby := UiIcons.ruby(40)
+	ruby.position = Vector2(card.size.x - 72, 95)
+	card.add_child(ruby)
 
 # Zmiana nazwy i ikony gracza. Ikonka roslinki ma trzy stany: klodka (roslina
 # jeszcze zablokowana), szara (do odblokowania w kilku krokach) i kolorowa (do

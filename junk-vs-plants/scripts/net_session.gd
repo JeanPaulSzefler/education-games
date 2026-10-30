@@ -16,7 +16,7 @@ extends Node
 const DISCOVERY_PORT := 47810
 const GAME_PORT := 47811
 # Podnosic przy kazdej zmianie protokolu - rozne wersje gry sie nie widza.
-const PROTOCOL_VERSION := 1
+const PROTOCOL_VERSION := 2
 const ANNOUNCE_INTERVAL := 1.0
 const PLAYER_TIMEOUT := 3.5
 const INVITE_RESEND_INTERVAL := 1.0
@@ -45,6 +45,8 @@ var active := false
 var is_host := false
 # Host: gosc jest juz na scenie gry i symulacja moze ruszyc.
 var guest_in_game := false
+# Nawozy sa w grze wspolne, wiec liczy sie wiekszy limit z obu kont.
+var team_fertilizer_limit := GameState.FERTILIZER_START_LIMIT
 # Komunikat do pokazania na sciezce po przerwaniu gry.
 var notice := ""
 
@@ -276,7 +278,7 @@ func _on_peer_connected(id: int) -> void:
 
 func _on_connected_to_server() -> void:
 	_set_peer_timeout(1)
-	_rpc_join.rpc_id(1, incoming_invite.get("token", ""))
+	_rpc_join.rpc_id(1, incoming_invite.get("token", ""), GameState.team_level_index(), GameState.fertilizer_limit)
 
 func _on_connection_failed() -> void:
 	incoming_invite = {}
@@ -316,6 +318,7 @@ func end_session() -> void:
 	guest_ready = false
 	guest_peer_id = 0
 	outgoing_invite = {}
+	GameState.team_level = {}
 	_close_peer()
 	stop_discovery()
 
@@ -329,20 +332,29 @@ func _begin_session(host: bool) -> void:
 
 # Gosc odsyla kod z zaproszenia. Kto inny w tej sieci nie dolaczy do gry.
 @rpc("any_peer", "call_remote", "reliable")
-func _rpc_join(token: String) -> void:
+func _rpc_join(token: String, guest_level: int, guest_fertilizer_limit: int) -> void:
 	var sender := multiplayer.get_remote_sender_id()
 	if outgoing_invite.is_empty() or token != outgoing_invite["token"]:
 		enet.disconnect_peer(sender)
 		return
 	guest_peer_id = sender
-	GameState.current_level_index = GameState.team_level_index()
-	_rpc_welcome.rpc_id(sender, GameState.current_level_index)
+	var level := clampi(guest_level, 0, GameState.LEVEL_COUNT - 1)
+	var difficulty := LevelData.team_difficulty(GameState.team_level_index(), level)
+	var boss := LevelData.random_team_boss(difficulty)
+	var limit: int = max(GameState.fertilizer_limit, guest_fertilizer_limit)
+	_rpc_welcome.rpc_id(sender, difficulty, boss, limit)
+	_setup_team_game(difficulty, boss, limit)
 	_begin_session(true)
 
 @rpc("authority", "call_remote", "reliable")
-func _rpc_welcome(level_idx: int) -> void:
-	GameState.current_level_index = clampi(level_idx, 0, LevelData.LEVELS.size() - 1)
+func _rpc_welcome(difficulty: int, boss: int, fertilizer_limit: int) -> void:
+	_setup_team_game(difficulty, boss, fertilizer_limit)
 	_begin_session(false)
+
+func _setup_team_game(difficulty: int, boss: int, fertilizer_limit: int) -> void:
+	GameState.current_level_index = difficulty
+	GameState.team_level = LevelData.team_level(difficulty, boss)
+	team_fertilizer_limit = fertilizer_limit
 
 # --- Start gry: czekamy, az obaj wybiora rosliny, a potem, az gosc wczyta plansze ---
 func mark_ready() -> void:

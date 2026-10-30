@@ -10,6 +10,7 @@ const CARD_SIZE := Vector2(152, 220)
 const CARD_GAP := Vector2(14, 20)
 const CARDS_PER_ROW := 7
 const GRID_TOP := 160.0
+const TEAM_LOADOUT_KEY := -1
 
 var selected: Array = []
 # plant_idx -> {"border_sb": StyleBoxFlat, "mark": Panel albo null}
@@ -20,7 +21,7 @@ var message_label: Label
 var play_button: Button
 
 func _ready() -> void:
-	var level: Dictionary = LevelData.LEVELS[GameState.current_level_index]
+	var level: Dictionary = GameState.current_level()
 
 	var bg := ColorRect.new()
 	bg.color = Color(0.15, 0.25, 0.15)
@@ -75,7 +76,7 @@ func _ready() -> void:
 	message_label.add_theme_color_override("font_color", Color(0.9, 0.35, 0.25))
 	add_child(message_label)
 
-	var loadout := GameState.get_loadout(GameState.current_level_index)
+	var loadout := GameState.get_loadout(_loadout_key())
 	if loadout.is_empty():
 		var unlocked := GameState.unlocked_plant_indices()
 		loadout = unlocked.slice(0, min(GameState.MAX_LOADOUT, unlocked.size()))
@@ -244,7 +245,7 @@ func _on_play_pressed() -> void:
 		if selected.has(i):
 			ordered.append(i)
 	GameState.current_loadout = ordered
-	GameState.set_loadout(GameState.current_level_index, ordered)
+	GameState.set_loadout(_loadout_key(), ordered)
 	if NetSession.active:
 		# Gra zespolowa rusza dopiero, gdy obaj gracze wybiora rosliny.
 		play_button.disabled = true
@@ -252,6 +253,10 @@ func _on_play_pressed() -> void:
 		NetSession.mark_ready()
 		return
 	_start_game()
+
+# Gra zespolowa ma jedna, wlasna talie, niezalezna od poziomow sciezki.
+func _loadout_key() -> int:
+	return TEAM_LOADOUT_KEY if NetSession.active else GameState.current_level_index
 
 func _start_game() -> void:
 	get_tree().change_scene_to_file("res://scenes/Main.tscn")

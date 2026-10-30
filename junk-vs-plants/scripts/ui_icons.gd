@@ -10,6 +10,9 @@ const RUBY_COLOR := Color(0.85, 0.1, 0.3)
 const RUBY_LIGHT_COLOR := Color(1.0, 0.45, 0.6)
 const RUBY_DARK_COLOR := Color(0.55, 0.04, 0.18)
 
+const CHEST_TEXTURE := "res://assets/sprites/ui/chest.png"
+const COIN_TEXTURE := "res://assets/sprites/ui/plant_coin.png"
+
 const GRAY_SHADER_CODE := """
 shader_type canvas_item;
 void fragment() {
@@ -131,6 +134,51 @@ static func plant_icon_gray(plant_idx: int, icon_size: float) -> TextureRect:
 	material.shader = shader
 	icon.material = material
 	return icon
+
+# Grafika z pliku, gdy juz jest w grze; inaczej null (patrz chest, plant_coin).
+static func _texture_icon(path: String, size: float) -> TextureRect:
+	if not ResourceLoader.exists(path):
+		return null
+	var icon := TextureRect.new()
+	icon.texture = load(path)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.size = Vector2(size, size)
+	icon.custom_minimum_size = Vector2(size, size)
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return icon
+
+# Skrzynia z nagrodami. Rysunek z kodu dziala do czasu dodania grafiki z
+# GRAFIKI_PROMPTY_4.md.
+static func chest(size: float) -> Control:
+	var file_icon := _texture_icon(CHEST_TEXTURE, size)
+	if file_icon != null:
+		return file_icon
+	var c := _box(size)
+	var wood := Color(0.62, 0.38, 0.16)
+	var band := Color(0.92, 0.72, 0.2)
+	_poly(c, size, [Vector2(0.08, 0.46), Vector2(0.92, 0.46), Vector2(0.92, 0.9), Vector2(0.08, 0.9)], wood)
+	_poly(c, size, [Vector2(0.08, 0.42), Vector2(0.16, 0.2), Vector2(0.84, 0.2), Vector2(0.92, 0.42)], wood.lightened(0.15))
+	_poly(c, size, [Vector2(0.06, 0.4), Vector2(0.94, 0.4), Vector2(0.94, 0.5), Vector2(0.06, 0.5)], band)
+	_poly(c, size, [Vector2(0.42, 0.36), Vector2(0.58, 0.36), Vector2(0.58, 0.62), Vector2(0.42, 0.62)], band.darkened(0.2))
+	return c
+
+# Roslimoneta (waluta ze skrzyn i gier zespolowych).
+static func plant_coin(size: float) -> Control:
+	var file_icon := _texture_icon(COIN_TEXTURE, size)
+	if file_icon != null:
+		return file_icon
+	var c := _box(size)
+	var points := []
+	var inner := []
+	for i in range(20):
+		var dir := Vector2.from_angle(TAU * i / 20.0)
+		points.append(Vector2(0.5, 0.5) + dir * 0.46)
+		inner.append(Vector2(0.5, 0.5) + dir * 0.36)
+	_poly(c, size, points, Color(0.8, 0.58, 0.1))
+	_poly(c, size, inner, Color(0.98, 0.82, 0.25))
+	_poly(c, size, [Vector2(0.5, 0.24), Vector2(0.68, 0.46), Vector2(0.5, 0.74), Vector2(0.32, 0.46)], Color(0.3, 0.68, 0.22))
+	return c
 
 # Klodka (ikonka rosliny, ktorej gracz jeszcze nie odblokowal).
 static func padlock(size: float) -> Control:

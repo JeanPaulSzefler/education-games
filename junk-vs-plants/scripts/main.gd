@@ -148,6 +148,8 @@ const ENDLESS_MIN_BETWEEN_WAVES := 2.0
 const ENDLESS_FIRST_BOSS_WAVE := 4         # indeks fali (5. fala) z pierwszym bossem
 const ENDLESS_BOSS_EVERY := 4              # potem boss co tyle fal
 const ENDLESS_EXTRA_BOSS_EVERY := 12       # co tyle fal kolejny boss naraz
+const ENDLESS_FIRST_FERTILIZER_WAVE := 3   # indeks fali z pierwszym nawozem
+const ENDLESS_FERTILIZER_EVERY := 4        # potem nawoz co tyle fal
 
 var PLANT_TYPES: Array
 var BOSS_TYPES: Array
@@ -167,6 +169,8 @@ var kills_label: Label
 var water := START_WATER
 var fertilizer := 0
 var fertilizer_mode := false
+# Indeksy fal, na poczatku ktorych na planszy pojawia sie nawoz.
+var fertilizer_waves: Array = []
 # Tryb usuwania: tapniecie "X", potem tapniecie rosliny - roslina znika bez
 # zwrotu kropel wody.
 var remove_mode := false
@@ -225,7 +229,8 @@ func _ready() -> void:
 	endless = GameState.is_endless_level(GameState.current_level_index)
 	# W trybie nieskonczonym fale sa dopisywane w locie, wiec potrzebna jest
 	# wlasna (modyfikowalna) tablica zamiast stalej z LevelData.
-	waves = [] if endless else LevelData.LEVELS[GameState.current_level_index]["waves"]
+	waves = [] if endless else _current_level()["waves"]
+	_setup_fertilizer_waves()
 	between_waves_timer = 3.0
 	_setup_grid_occupancy()
 	_setup_blocked_cells()
@@ -242,7 +247,25 @@ func _ready() -> void:
 		_setup_team()
 
 func _current_level() -> Dictionary:
-	return LevelData.LEVELS[GameState.current_level_index]
+	return GameState.current_level()
+
+# Nawozy pojawiaja sie same, rozlozone rowno na kolejne etapy poziomu.
+func _setup_fertilizer_waves() -> void:
+	var count := LevelData.fertilizer_count(GameState.current_level_index)
+	for k in range(count):
+		fertilizer_waves.append(int((k + 1) * waves.size() / float(count + 1)))
+
+func _fertilizer_appears_on_wave(wave_idx: int) -> bool:
+	if endless:
+		return wave_idx >= ENDLESS_FIRST_FERTILIZER_WAVE and (wave_idx - ENDLESS_FIRST_FERTILIZER_WAVE) % ENDLESS_FERTILIZER_EVERY == 0
+	return fertilizer_waves.has(wave_idx)
+
+# W grze zespolowej nawozy sa wspolne, wiec limit ustala NetSession.
+func _fertilizer_limit() -> int:
+	return NetSession.team_fertilizer_limit if team else GameState.fertilizer_limit
+
+func _fertilizer_full_message() -> String:
+	return "Komplet nawozow (%d) - najpierw ktorys wykorzystaj" % _fertilizer_limit()
 
 func _cactus_water_multiplier() -> float:
 	return _current_level().get("cactus_water_multiplier", 1.0)
@@ -294,7 +317,7 @@ func _build_grid_visual() -> void:
 
 func _build_hud() -> void:
 	var level_title := Label.new()
-	level_title.text = LevelData.LEVELS[GameState.current_level_index]["name"]
+	level_title.text = _current_level()["name"]
 	level_title.position = Vector2(GRID_LEFT, 4)
 	level_title.add_theme_font_size_override("font_size", 16)
 	add_child(level_title)
@@ -438,7 +461,7 @@ func _build_fertilizer_tile() -> void:
 
 	var count_label := Label.new()
 	count_label.position = Vector2(TILE_ICON_SIZE + 22, (TILE_HEIGHT - 30) / 2.0)
-	count_label.size = Vector2(60, 30)
+	count_label.size = Vector2(90, 30)
 	count_label.add_theme_font_size_override("font_size", 22)
 	count_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	fertilizer_tile["button"].add_child(count_label)
@@ -747,7 +770,7 @@ func _try_remove_plant(col: int, row: int) -> void:
 	if plant == null:
 		message_label.text = "Brak rosliny na tym polu"
 		return
-	_remove_plant(plant, false)
+	_remove_plant(plant)
 	remove_mode = false
 	message_label.text = ""
 	_update_hud()
@@ -762,7 +785,7 @@ func _update_hud() -> void:
 		var is_selected: bool = selected_plant_type == tile["plant_idx"]
 		_set_tile_selected(tile, is_selected, TILE_BORDER_COLOR if affordable else TILE_NO_WATER_BORDER_COLOR)
 
-	fertilizer_tile["count_label"].text = str(fertilizer)
+	fertilizer_tile["count_label"].text = "%d / %d" % [fertilizer, _fertilizer_limit()]
 	fertilizer_tile["button"].modulate = Color(1, 1, 1) if fertilizer > 0 else TILE_UNAFFORDABLE_MODULATE
 	_set_tile_selected(fertilizer_tile, fertilizer_mode, TILE_BORDER_COLOR)
 
@@ -846,6 +869,8 @@ func _update_wave_spawning(delta: float) -> void:
 					_add_extra_enemies(wave_spawn_queue, TEAM_EXTRA_ENEMIES)
 				if current_wave > 0 and _pile_appears_on_wave(current_wave):
 					_spawn_junk_pile()
+				if _fertilizer_appears_on_wave(current_wave):
+					_spawn_fertilizer_drop()
 				_add_pile_enemies(wave_spawn_queue)
 				if current_wave == 0 and wave_spawn_queue.size() > MAX_FIRST_WAVE_ENEMIES:
 					wave_spawn_queue.resize(MAX_FIRST_WAVE_ENEMIES)
@@ -1422,10 +1447,8 @@ func _plant_ahead(e: Dictionary) -> Variant:
 		return candidate
 	return null
 
-func _remove_plant(plant: Dictionary, drop_fertilizer: bool = true) -> void:
+func _remove_plant(plant: Dictionary) -> void:
 	grid_occupancy[plant["col"]][plant["row"]] = null
-	if drop_fertilizer:
-		_spawn_fertilizer_drop(plant["node"].position)
 	plant["node"].queue_free()
 	plants.erase(plant)
 
@@ -1532,7 +1555,7 @@ func _trigger_freeze(plant: Dictionary, pt: Dictionary, target: Dictionary) -> v
 	target["slow_timer"] = pt["slow_duration"]
 	target["slow_factor"] = pt["slow_factor"]
 	target["node"].modulate = FROZEN_COLOR
-	_remove_plant(plant, false)
+	_remove_plant(plant)
 
 # Ognioroslinka znika, a szkodnik, ktory na nia wszedl, staje w ogniu: przez
 # burn_duration s traci w sumie burn_dmg HP, ale moze isc dalej.
@@ -1543,7 +1566,7 @@ func _trigger_burn(plant: Dictionary, pt: Dictionary, target: Dictionary) -> voi
 		target["node"].modulate = _enemy_base_modulate(target)
 	if target["flames"] == null:
 		target["flames"] = _make_flames(target["node"])
-	_remove_plant(plant, false)
+	_remove_plant(plant)
 
 # Plomienie: male pomaranczowo-zolte kwadraciki unoszace sie z wroga.
 func _make_flames(enemy_node: Control) -> CPUParticles2D:
@@ -1584,7 +1607,7 @@ func _trigger_gust(plant: Dictionary, pt: Dictionary) -> void:
 				dead.append(e)
 	for e in dead:
 		_kill_enemy(e)
-	_remove_plant(plant, false)
+	_remove_plant(plant)
 
 # Przesuwajaca sie niebieska chmurka: startuje w polu rosliny i leci do
 # prawej krawedzi planszy w tym rzedzie, potem zanika. Sam efekt odrzutu
@@ -1629,7 +1652,7 @@ func _trigger_bomb(plant: Dictionary, pt: Dictionary) -> void:
 	for pile in junk_piles.values():
 		if abs(pile["row"] - plant["row"]) <= radius_cells and abs(pile["col"] - plant["col"]) <= radius_cells:
 			_damage_pile(pile, pt["blast_dmg"])
-	_remove_plant(plant, false)
+	_remove_plant(plant)
 
 # Wybuch Bumorzecha: pomaranczowe kolko rosnie do ok. 3 pol srednicy z
 # zoltym srodkiem, jednoczesnie zanikajac, plus krotkie biale miegniecie
@@ -1795,22 +1818,25 @@ func _collect_water_drop(drop: Dictionary) -> void:
 	_update_hud()
 
 func _update_water_drops(delta: float) -> void:
+	for drop in water_drops:
+		if drop["stolen_by"] == null:
+			_fly_over_board(drop, delta)
+
+# Krople i nawozy lataja nad plansza, odbijajac sie od jej krawedzi.
+func _fly_over_board(drop: Dictionary, delta: float) -> void:
 	var min_x := float(GRID_LEFT)
 	var max_x := float(GRID_LEFT + COLS * CELL - WATER_DROP_TAP_SIZE)
 	var min_y := float(GRID_TOP)
 	var max_y := float(GRID_TOP + ROWS * CELL - WATER_DROP_TAP_SIZE)
-	for drop in water_drops:
-		if drop["stolen_by"] != null:
-			continue
-		var node: Control = drop["node"]
-		var pos: Vector2 = node.position + Vector2(drop["vx"], drop["vy"]) * delta
-		if pos.x < min_x or pos.x > max_x:
-			drop["vx"] *= -1.0
-			pos.x = clamp(pos.x, min_x, max_x)
-		if pos.y < min_y or pos.y > max_y:
-			drop["vy"] *= -1.0
-			pos.y = clamp(pos.y, min_y, max_y)
-		node.position = pos
+	var node: Control = drop["node"]
+	var pos: Vector2 = node.position + Vector2(drop["vx"], drop["vy"]) * delta
+	if pos.x < min_x or pos.x > max_x:
+		drop["vx"] *= -1.0
+		pos.x = clamp(pos.x, min_x, max_x)
+	if pos.y < min_y or pos.y > max_y:
+		drop["vy"] *= -1.0
+		pos.y = clamp(pos.y, min_y, max_y)
+	node.position = pos
 
 # --- Brudna Gabka: po pojawieniu sie "przyciaga" najblizsza wolna kropla wody -
 # przebarwia ja na brudno-zielono i powoli sciaga w swoja strone. Gracz moze ja
@@ -1864,12 +1890,16 @@ func _release_stolen_drop(e: Dictionary) -> void:
 	target["vx"] = cos(angle) * WATER_DROP_SPEED
 	target["vy"] = sin(angle) * WATER_DROP_SPEED
 
-# --- Nawozy: pojawiaja sie po pokonaniu rosliny, zbierane tapnieciem ---
-func _spawn_fertilizer_drop(origin: Vector2) -> void:
+# --- Nawozy: pojawiaja sie same (patrz _setup_fertilizer_waves), lataja nad
+# plansza jak krople wody i czekaja na tapniecie ---
+func _spawn_fertilizer_drop() -> void:
 	var hit_area := Control.new()
 	hit_area.size = Vector2(FERTILIZER_TAP_SIZE, FERTILIZER_TAP_SIZE)
 	var visual_offset := (FERTILIZER_TAP_SIZE - FERTILIZER_VISUAL_SIZE) / 2
-	hit_area.position = origin + Vector2(CELL / 2 - FERTILIZER_TAP_SIZE / 2, -10 - visual_offset)
+	hit_area.position = Vector2(
+		randf_range(GRID_LEFT, GRID_LEFT + COLS * CELL - FERTILIZER_TAP_SIZE),
+		randf_range(GRID_TOP, GRID_TOP + ROWS * CELL - FERTILIZER_TAP_SIZE)
+	)
 	hit_area.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(hit_area)
 
@@ -1877,7 +1907,8 @@ func _spawn_fertilizer_drop(origin: Vector2) -> void:
 	visual.position = Vector2(visual_offset, visual_offset)
 	hit_area.add_child(visual)
 
-	var drop := {"id": _new_entity_id(), "node": hit_area, "vx": randf_range(-10.0, 10.0), "vy": randf_range(20.0, 34.0), "life": 6.0}
+	var angle := randf_range(0.0, TAU)
+	var drop := {"id": _new_entity_id(), "node": hit_area, "vx": cos(angle) * WATER_DROP_SPEED, "vy": sin(angle) * WATER_DROP_SPEED}
 	hit_area.gui_input.connect(_on_fertilizer_drop_gui_input.bind(drop))
 	fertilizer_drops.append(drop)
 
@@ -1889,22 +1920,17 @@ func _on_fertilizer_drop_gui_input(event: InputEvent, drop: Dictionary) -> void:
 func _collect_fertilizer_drop(drop: Dictionary) -> void:
 	if not fertilizer_drops.has(drop):
 		return
+	if fertilizer >= _fertilizer_limit():
+		message_label.text = _fertilizer_full_message()
+		return
 	fertilizer += 1
 	drop["node"].queue_free()
 	fertilizer_drops.erase(drop)
 	_update_hud()
 
 func _update_fertilizer_drops(delta: float) -> void:
-	var to_remove := []
 	for drop in fertilizer_drops:
-		drop["node"].position.y -= drop["vy"] * delta
-		drop["node"].position.x += drop["vx"] * delta
-		drop["life"] -= delta
-		if drop["life"] <= 0.0:
-			to_remove.append(drop)
-	for drop in to_remove:
-		drop["node"].queue_free()
-		fertilizer_drops.erase(drop)
+		_fly_over_board(drop, delta)
 
 # --- Paski zycia: widoczne tylko podczas ataku ---
 func _add_health_bar(parent_node: Control, width: int) -> Dictionary:
@@ -2051,7 +2077,7 @@ func _on_guest_action(kind: String, args: Array) -> void:
 				if grid_occupancy[args[0]][args[1]] == null:
 					NetSession.send_action_error("Brak rosliny na tym polu")
 				else:
-					_remove_plant(grid_occupancy[args[0]][args[1]], false)
+					_remove_plant(grid_occupancy[args[0]][args[1]])
 		"fertilizer":
 			if _is_valid_cell(args, 0) and fertilizer > 0:
 				if grid_occupancy[args[0]][args[1]] == null:
@@ -2065,6 +2091,9 @@ func _on_guest_action(kind: String, args: Array) -> void:
 					_collect_water_drop(d)
 					break
 		"fertilizer_drop":
+			if fertilizer >= _fertilizer_limit():
+				NetSession.send_action_error(_fertilizer_full_message())
+				return
 			for d in fertilizer_drops:
 				if not args.is_empty() and d["id"] == args[0]:
 					_collect_fertilizer_drop(d)
@@ -2106,6 +2135,12 @@ func _on_team_event(kind: String, args: Array) -> void:
 
 func _on_team_game_over(won: bool, enemy_texture: String) -> void:
 	if won:
+		# Ostatni stan planszy moze nie zdazyc dojsc, a wszyscy wrogowie sa juz pokonani.
+		for key in net_views.keys():
+			if key.begins_with("e"):
+				net_views[key]["node"].queue_free()
+				net_views.erase(key)
+		_apply_boss_bar([])
 		_win_game()
 	else:
 		if enemy_texture.begins_with("res://assets/"):
@@ -2217,6 +2252,9 @@ func _make_drop_view(key: String, pos: Vector2, texture: String, visual_size: in
 	hit_area.add_child(visual)
 	hit_area.gui_input.connect(func(event: InputEvent):
 		if _is_tap_press(event) and hit_area.visible:
+			if action == "fertilizer_drop" and fertilizer >= _fertilizer_limit():
+				message_label.text = _fertilizer_full_message()
+				return
 			hit_area.visible = false
 			NetSession.send_action(action, [id]))
 	var view := _add_view(key, hit_area, pos)
@@ -2334,8 +2372,14 @@ func _win_game() -> void:
 	win_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(win_label)
 
+	if team:
+		# Nagroda za kazda wygrana gre zespolowa, u obu graczy.
+		GameState.award_team_win()
+		var reward_y := VIEWPORT_HEIGHT / 2.0 - 10
+		_show_ruby_reward(Vector2(VIEWPORT_WIDTH / 2.0 - 190, reward_y), 64, false, "+%d" % GameState.TEAM_WIN_RUBIES)
+		_show_ruby_reward(Vector2(VIEWPORT_WIDTH / 2.0 + 30, reward_y), 64, false, "+%d" % GameState.TEAM_WIN_COINS, UiIcons.plant_coin(64))
 	# Rubin tylko za pierwsze wygranie tego poziomu.
-	if not team and GameState.award_level_ruby(GameState.current_level_index):
+	elif GameState.award_level_ruby(GameState.current_level_index):
 		_show_ruby_reward(Vector2(VIEWPORT_WIDTH / 2.0 - 70, VIEWPORT_HEIGHT / 2.0 - 10), 64, false)
 
 	var delay := get_tree().create_timer(1.5)
@@ -2377,7 +2421,7 @@ func _spawn_confetti() -> void:
 
 # "+1 [rubin]" wyskakujacy w danym miejscu; fade = po chwili znika (w trakcie
 # gry), bez fade zostaje na ekranie (ekran wygranej).
-func _show_ruby_reward(pos: Vector2, icon_size: float, fade := true) -> void:
+func _show_ruby_reward(pos: Vector2, icon_size: float, fade := true, amount := "+1", icon: Control = null) -> void:
 	var box := Control.new()
 	box.position = pos
 	box.size = Vector2(icon_size * 2.2, icon_size)
@@ -2387,7 +2431,7 @@ func _show_ruby_reward(pos: Vector2, icon_size: float, fade := true) -> void:
 	add_child(box)
 
 	var plus := Label.new()
-	plus.text = "+1"
+	plus.text = amount
 	plus.add_theme_font_size_override("font_size", int(icon_size * 0.75))
 	plus.add_theme_color_override("font_color", UiIcons.RUBY_LIGHT_COLOR)
 	plus.add_theme_color_override("font_outline_color", UiIcons.RUBY_DARK_COLOR.darkened(0.5))
@@ -2399,9 +2443,9 @@ func _show_ruby_reward(pos: Vector2, icon_size: float, fade := true) -> void:
 	plus.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(plus)
 
-	var ruby := UiIcons.ruby(icon_size)
-	ruby.position = Vector2(icon_size * 1.2, 0)
-	box.add_child(ruby)
+	var reward_icon: Control = icon if icon != null else UiIcons.ruby(icon_size)
+	reward_icon.position = Vector2(icon_size * 1.2, 0)
+	box.add_child(reward_icon)
 
 	var tw := box.create_tween()
 	tw.tween_property(box, "scale", Vector2(1, 1), 0.4).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
