@@ -28,6 +28,7 @@ const OK_BTN_COLOR := Color(0.25, 0.6, 0.25)
 const SELECTED_ICON_BORDER := Color(0.95, 0.75, 0.1)
 const GREETING_SECONDS := 5.0
 const DELETE_BTN_COLOR := Color(0.75, 0.18, 0.15)
+const MOVES_BADGE_COLOR := Color(0.85, 0.3, 0.2)
 # Ikonka "Moich roslinek" - Lisc Bananowca (indeks w PlantData.TYPES).
 const MY_PLANTS_ICON_PLANT := 2
 const GAME_RULES_TEXT := "Smieciostwory ida przez ogrod do domu - nie pozwol im dojsc! " + \
@@ -36,7 +37,9 @@ const GAME_RULES_TEXT := "Smieciostwory ida przez ogrod do domu - nie pozwol im 
 	"Za kazdy wygrany poziom dostajesz rubin (raz na poziom). " + \
 	"Co kilka poziomow na sciezce czeka nowa roslinka - wejdz w jej kolko, zeby ja odblokowac. " + \
 	"Miedzy roslinkami stoja skrzynie z rubinami i roslimonetami. " + \
-	"Pokonana roslinka po prostu znika. Nawozy pojawiaja sie same na planszy - tapnij, zeby je zebrac; ich limit zwiekszysz w sklepie."
+	"Pokonana roslinka po prostu znika. Nawozy pojawiaja sie same na planszy - tapnij, zeby je zebrac; ich limit zwiekszysz w sklepie. " + \
+	"W Roslinnych trojkach zamieniasz sasiednie roslinki, zeby ulozyc 3 takie same w rzedzie - 8 punktow to ulepszenie tej roslinki. " + \
+	"Ruchy dostajesz za roslinki wyhodowane w ogrodzie, a czasem w skrzyni."
 const SHOP_OFFERS := [
 	{"rubies": 2, "price": "Reklama", "ad": true},
 	{"rubies": 10, "price": "5 zl"},
@@ -508,6 +511,21 @@ func _build_corner_buttons() -> void:
 	_add_centered_icon(book_btn, UiIcons.book(CORNER_BTN_SIZE - 16))
 	book_btn.pressed.connect(_show_game_info)
 
+	# Roslinne trojki: wydarzenie stale, zawsze u gory ekranu, z liczba ruchow.
+	var match_btn := _make_corner_button(Vector2(CORNER_MARGIN + CORNER_BTN_SIZE + 50, CORNER_MARGIN), "Roslinne trojki")
+	_add_centered_icon(match_btn, UiIcons.match_event(CORNER_BTN_SIZE - 16))
+	match_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/PlantMatch.tscn"))
+	var moves_badge := Label.new()
+	moves_badge.text = str(GameState.match_moves)
+	moves_badge.size = Vector2(36, 36)
+	moves_badge.position = Vector2(CORNER_BTN_SIZE - 26, -10)
+	moves_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	moves_badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	moves_badge.add_theme_font_size_override("font_size", 18)
+	moves_badge.add_theme_stylebox_override("normal", UiIcons.round_style(MOVES_BADGE_COLOR, 18))
+	moves_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	match_btn.add_child(moves_badge)
+
 	var shop_x := VIEWPORT_WIDTH - CORNER_MARGIN - CORNER_BTN_SIZE
 	var shop_btn := _make_corner_button(Vector2(shop_x, CORNER_MARGIN), "Sklep")
 	_add_centered_icon(shop_btn, UiIcons.shop(CORNER_BTN_SIZE - 16))
@@ -742,8 +760,13 @@ func _show_chest(chest_level: int) -> void:
 	var tw := icon.create_tween()
 	tw.tween_property(icon, "scale", Vector2(1, 1), 0.6).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
-	_add_reward_row(panel, 150.0, "+%d" % reward["rubies"], UiIcons.ruby(56))
-	_add_reward_row(panel, 340.0, "+%d" % reward["coins"], UiIcons.plant_coin(56))
+	if reward["moves"] > 0:
+		_add_reward_row(panel, 50.0, "+%d" % reward["rubies"], UiIcons.ruby(56))
+		_add_reward_row(panel, 240.0, "+%d" % reward["coins"], UiIcons.plant_coin(56))
+		_add_reward_row(panel, 430.0, "+%d" % reward["moves"], UiIcons.match_move(56))
+	else:
+		_add_reward_row(panel, 150.0, "+%d" % reward["rubies"], UiIcons.ruby(56))
+		_add_reward_row(panel, 340.0, "+%d" % reward["coins"], UiIcons.plant_coin(56))
 
 	var ok_btn := _popup_button("Super!", OK_BTN_COLOR, Vector2((panel.size.x - 220) / 2.0, 400), Vector2(220, 70))
 	ok_btn.pressed.connect(func(): get_tree().reload_current_scene())
@@ -800,7 +823,8 @@ func _show_game_info() -> void:
 		list.add_child(more)
 
 # "Moje roslinki": wszystkie rosliny - odblokowane w kolorze, reszta jako
-# cien ze znakiem zapytania. Tapniecie odblokowanej pokazuje jej opis i ulepszenie.
+# cien. Tapniecie rosliny pokazuje jej opis i ulepszenie; ulepszac mozna takze
+# te, ktorych gracz jeszcze nie odblokowal.
 func _show_my_plants(selected := -1) -> void:
 	var panel := _open_popup(Vector2(1000, 620), "Moje roslinki")
 	var per_row := 7
@@ -811,9 +835,11 @@ func _show_my_plants(selected := -1) -> void:
 	var desc := _popup_label("Tapnij roslinke, zeby zobaczyc, co robi, i ja ulepszyc.", 20)
 	if selected >= 0:
 		desc.text = _plant_summary(selected)
+		if not GameState.is_plant_unlocked(selected):
+			desc.text += " Odblokujesz ja na poziomie %d." % PlantData.TYPES[selected].get("unlock_level", 1)
 		_build_plant_upgrade(panel, selected)
-	desc.position = Vector2(40, 430)
-	desc.size = Vector2(panel.size.x - 80, 70)
+	desc.position = Vector2(40, 442)
+	desc.size = Vector2(panel.size.x - 80, 76)
 	desc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	panel.add_child(desc)
@@ -825,7 +851,6 @@ func _show_my_plants(selected := -1) -> void:
 		btn.size = Vector2(cell, cell)
 		btn.focus_mode = Control.FOCUS_NONE
 		UiIcons.style_button(btn, Color(0.55, 0.8, 0.4) if unlocked else Color(0.55, 0.55, 0.55), 16)
-		btn.disabled = not unlocked
 		var icon := UiIcons.plant_icon(p_idx, cell - 16)
 		icon.position = Vector2(8, 8)
 		if not unlocked:
@@ -834,28 +859,29 @@ func _show_my_plants(selected := -1) -> void:
 		btn.pressed.connect(func(): _show_my_plants(p_idx))
 		panel.add_child(btn)
 
-		var name_label := _popup_label(PlantData.TYPES[p_idx]["name"] if unlocked else "?", 15)
+		var name_label := _popup_label(PlantData.TYPES[p_idx]["name"], 15)
 		name_label.position = Vector2(btn.position.x - 10, btn.position.y + cell + 2)
 		name_label.size = Vector2(cell + 20, 22)
 		name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		panel.add_child(name_label)
 
-		var level := GameState.plant_upgrade_level(p_idx)
-		if level > 0:
-			var level_label := _popup_label("%d / %d" % [level, GameState.PLANT_UPGRADE_MAX_LEVEL], 14)
-			level_label.position = Vector2(btn.position.x - 10, btn.position.y + cell + 22)
-			level_label.size = Vector2(cell + 20, 20)
-			level_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			panel.add_child(level_label)
+		var level_bar := UiIcons.segment_bar(Vector2(cell, 14), GameState.plant_upgrade_level(p_idx), GameState.PLANT_UPGRADE_MAX_LEVEL)
+		level_bar.position = Vector2(btn.position.x, btn.position.y + cell + 28)
+		panel.add_child(level_bar)
 
-# Poziom ulepszenia wybranej rosliny i przycisk zakupu kolejnego.
+# Poziom ulepszenia wybranej rosliny (pasek jak w Plants vs Zombies) i przycisk
+# zakupu kolejnego.
 func _build_plant_upgrade(panel: Panel, plant_idx: int) -> void:
 	var level := GameState.plant_upgrade_level(plant_idx)
+	var level_bar := UiIcons.segment_bar(Vector2(260, 28), level, GameState.PLANT_UPGRADE_MAX_LEVEL)
+	level_bar.position = Vector2(40, 547)
+	panel.add_child(level_bar)
+
 	var effect: String = PlantData.UPGRADE_EFFECTS[PlantData.TYPES[plant_idx]["role"]]
 	var bonus := (GameState.plant_power(plant_idx) - 1.0) * 100.0
-	var info := _popup_label("Ulepszenie: %d / %d (+%.1f%%, %s). Masz rubinow: %d" % [level, GameState.PLANT_UPGRADE_MAX_LEVEL, bonus, effect, GameState.rubies], 20)
-	info.position = Vector2(40, 526)
-	info.size = Vector2(panel.size.x - 340, 70)
+	var info := _popup_label("+%.1f%% (%s). Masz rubinow: %d" % [bonus, effect, GameState.rubies], 20)
+	info.position = Vector2(316, 526)
+	info.size = Vector2(panel.size.x - 316 - 310, 70)
 	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	info.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	panel.add_child(info)
@@ -978,12 +1004,15 @@ func _build_ruby_offers(list: VBoxContainer) -> void:
 		plot >= 0 and GameState.rubies >= GameState.GARDEN_RUSH_RUBIES,
 		func():
 			var bought := GameState.rush_plot(plot)
-			GameState.harvest_ready_plots()
+			GameState.mark_ready_plots()
 			return bought)
 
 	var upgrade_row := _popup_label("Ulepszenia roslin kupisz w \"Moich roslinkach\": tapnij roslinke.", 18)
 	upgrade_row.custom_minimum_size = Vector2(list.custom_minimum_size.x, 30)
 	list.add_child(upgrade_row)
+	var rent_row := _popup_label("7. miejsce w talii (%d rubiny na jedna gre) wypozyczysz przed poziomem, przy wyborze roslin." % GameState.RENT_SLOT_RUBIES, 18)
+	rent_row.custom_minimum_size = Vector2(list.custom_minimum_size.x, 30)
+	list.add_child(rent_row)
 
 # Pomoce do wydarzen widac wszystkie, ale kupic mozna tylko te z biezacego.
 func _build_coin_offers(list: VBoxContainer) -> void:

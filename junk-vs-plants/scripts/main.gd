@@ -90,6 +90,9 @@ const WATER_ICON_SIZE := 40
 const TILE_WIDTH := 300.0
 const TILE_HEIGHT := 76.0
 const TILE_GAP := 8.0
+# Z wypozyczonym siodmym miejscem kafelki sa nizsze, zeby nawoz zmiescil sie na ekranie.
+const COMPACT_TILE_HEIGHT := 68.0
+const COMPACT_TILE_GAP := 5.0
 const TILE_ICON_SIZE := 64
 const TILE_BORDER_COLOR := Color(0.35, 0.3, 0.22)
 const TILE_SELECTED_BORDER_COLOR := Color(0.95, 0.85, 0.15)
@@ -243,6 +246,8 @@ var message_label: Label
 # {"plant_idx", "button", "border_sb", "base_y", "cooldown_shade"} - jeden wpis
 # na kafelek rosliny w pasku
 var plant_tiles := []
+var tile_height := TILE_HEIGHT
+var tile_gap := TILE_GAP
 # {"button", "border_sb", "count_label"} - kafelek nawozu (ten sam styl co rosliny)
 var fertilizer_tile: Dictionary
 var boss_name_label: Label
@@ -326,6 +331,9 @@ func _ready() -> void:
 	_build_hud()
 	_build_top_buttons()
 	_build_water_counter()
+	if _has_rented_slot():
+		tile_height = COMPACT_TILE_HEIGHT
+		tile_gap = COMPACT_TILE_GAP
 	_build_plant_bar()
 	_build_fertilizer_tile()
 	_build_remove_button()
@@ -337,6 +345,10 @@ func _ready() -> void:
 
 func _current_level() -> Dictionary:
 	return GameState.current_level()
+
+# Siodma roslina w talii oznacza miejsce wypozyczone za rubiny na te jedna gre.
+func _has_rented_slot() -> bool:
+	return not belt and GameState.current_loadout.size() > GameState.MAX_LOADOUT
 
 # Nawozy pojawiaja sie same, rozlozone rowno na kolejne etapy poziomu.
 func _setup_fertilizer_waves() -> void:
@@ -477,7 +489,7 @@ func _sidebar_tiles_top() -> float:
 func _build_tile(y: float, icon_texture: String) -> Dictionary:
 	var btn := Button.new()
 	btn.position = Vector2(SIDEBAR_X, y)
-	btn.size = Vector2(TILE_WIDTH, TILE_HEIGHT)
+	btn.size = Vector2(TILE_WIDTH, tile_height)
 	# flat = false: przycisk "flat" w ogole nie rysuje StyleBoxa (tla i ramki).
 	btn.flat = false
 	btn.focus_mode = Control.FOCUS_NONE
@@ -492,7 +504,7 @@ func _build_tile(y: float, icon_texture: String) -> Dictionary:
 	add_child(btn)
 
 	var icon := _make_sprite(icon_texture, TILE_ICON_SIZE)
-	icon.position = Vector2(10, (TILE_HEIGHT - TILE_ICON_SIZE) / 2.0)
+	icon.position = Vector2(10, (tile_height - TILE_ICON_SIZE) / 2.0)
 	btn.add_child(icon)
 
 	return {"button": btn, "border_sb": border_sb, "base_y": y}
@@ -520,18 +532,18 @@ func _build_plant_bar() -> void:
 	for i in range(loadout.size()):
 		var plant_idx: int = loadout[i]
 		var pt = PLANT_TYPES[plant_idx]
-		var y := tiles_top + i * (TILE_HEIGHT + TILE_GAP)
+		var y := tiles_top + i * (tile_height + tile_gap)
 		var tile := _build_tile(y, pt["texture"])
 		tile["plant_idx"] = plant_idx
 
 		# Koszt: liczba na tle malej ikonki kropli, przy prawej krawedzi kafelka.
 		var cost_icon := _make_sprite(WATER_DROP_TEXTURE, 34)
-		cost_icon.position = Vector2(TILE_WIDTH - 66, (TILE_HEIGHT - 34) / 2.0)
+		cost_icon.position = Vector2(TILE_WIDTH - 66, (tile_height - 34) / 2.0)
 		tile["button"].add_child(cost_icon)
 
 		var cost_label := Label.new()
 		cost_label.text = str(pt["cost"])
-		cost_label.position = Vector2(TILE_WIDTH - 66, (TILE_HEIGHT - 24) / 2.0)
+		cost_label.position = Vector2(TILE_WIDTH - 66, (tile_height - 24) / 2.0)
 		cost_label.size = Vector2(34, 24)
 		cost_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		cost_label.add_theme_font_size_override("font_size", 15)
@@ -551,11 +563,11 @@ func _build_plant_bar() -> void:
 
 func _build_fertilizer_tile() -> void:
 	var loadout_size: int = GameState.MAX_LOADOUT if belt else plant_tiles.size()
-	var y :=_sidebar_tiles_top() + loadout_size * (TILE_HEIGHT + TILE_GAP)
+	var y :=_sidebar_tiles_top() + loadout_size * (tile_height + tile_gap)
 	fertilizer_tile = _build_tile(y, FERTILIZER_TEXTURE)
 
 	var count_label := Label.new()
-	count_label.position = Vector2(TILE_ICON_SIZE + 22, (TILE_HEIGHT - 30) / 2.0)
+	count_label.position = Vector2(TILE_ICON_SIZE + 22, (tile_height - 30) / 2.0)
 	count_label.size = Vector2(90, 30)
 	count_label.add_theme_font_size_override("font_size", 22)
 	count_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -988,7 +1000,7 @@ func _update_cooldowns(delta: float) -> void:
 		var ratio := 0.0
 		if plant_cooldowns.has(idx):
 			ratio = plant_cooldowns[idx] / PLANT_TYPES[idx]["recharge"]
-		tile["cooldown_shade"].size.y = TILE_HEIGHT * ratio
+		tile["cooldown_shade"].size.y = tile_height * ratio
 
 # --- Fale ---
 func _update_wave_spawning(delta: float) -> void:
@@ -2228,7 +2240,7 @@ func _rebuild_belt_tiles() -> void:
 	plant_tiles.clear()
 	for i in range(belt_items.size()):
 		var plant_idx: int = belt_items[i]
-		var tile := _build_tile(_sidebar_tiles_top() + i * (TILE_HEIGHT + TILE_GAP), PLANT_TYPES[plant_idx]["texture"])
+		var tile := _build_tile(_sidebar_tiles_top() + i * (tile_height + tile_gap), PLANT_TYPES[plant_idx]["texture"])
 		tile["plant_idx"] = plant_idx
 		var shade := ColorRect.new()
 		shade.size = Vector2(TILE_WIDTH, 0)
@@ -3009,6 +3021,9 @@ func _show_end_buttons() -> void:
 		# Wydarzenie skonczylo sie w trakcie gry: etapu nie da sie juz powtorzyc.
 		if event_game and GameState.event_seconds_left() == 0:
 			get_tree().change_scene_to_file("res://scenes/Events.tscn")
+		# Wypozyczone miejsce bylo na jedna gre - talie wybiera sie od nowa.
+		elif _has_rented_slot():
+			get_tree().change_scene_to_file("res://scenes/PlantSelect.tscn")
 		else:
 			get_tree().reload_current_scene())
 	add_child(retry_btn)

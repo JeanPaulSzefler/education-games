@@ -1,8 +1,10 @@
 extends Control
 
 # Ogrod (wydarzenie stale): 8 pol z ziemia. Gracz sadzi sadzonke, podlewa ja i
-# czeka 15 godzin; dorosla roslinka daje 50 roslimonet i znika. Czas przyspiesza
-# 15 rubinow albo pszczolka. Stan pol i czasy trzyma GameState.
+# czeka 15 godzin, a sadzonka powoli zmienia sie w dorosla roslinke. Gotowa
+# roslinka swieci na teczowo i czeka, az gracz ja tapnie: wtedy daje 50
+# roslimonet i ruch do Roslinnych trojek, i znika. Czas przyspiesza 15 rubinow
+# albo pszczolka. Stan pol i czasy trzyma GameState.
 
 const VIEWPORT_WIDTH := 1280
 const VIEWPORT_HEIGHT := 720
@@ -22,8 +24,15 @@ const POPUP_TEXT_COLOR := Color(0.15, 0.12, 0.1)
 # Ten sam rysunek co Pokrzywa, ale jasnofioletowy.
 const GROWN_PLANT_IDX := 3
 const GROWN_TINT := Color(0.85, 0.7, 1.0)
+const GROWN_SIZE := 130.0
+# Sadzonka zaczyna od rozmiaru z pola przed podlaniem (90 z 130).
+const SAPLING_SCALE := 0.7
+const GLOW_SIZE := 180.0
+const REWARD_ICON_SIZE := 36.0
 const BEE_SIZE := 80.0
 const BEE_Y := 500.0
+const BEE_FLIGHT_TIME := 1.2
+const BEE_SIT_SWINGS := 3
 const TOOL_NONE := ""
 const TOOL_SAPLING := "sapling"
 const TOOL_WATER := "water"
@@ -35,9 +44,13 @@ var tools_layer: Control
 var message_label: Label
 var coin_label: Label
 var ruby_label: Label
+var moves_label: Label
 # Etykiety licznikow: indeks pola -> Label.
 var timer_labels := {}
+# Etapy wzrostu na rosnacych polach: indeks pola -> Array rysunkow.
+var growth_views := {}
 var bee: Button
+var bee_tween: Tween
 var popup: Control
 var tick := 0.0
 
@@ -49,6 +62,13 @@ func _ready() -> void:
 	add_child(bg)
 
 	add_child(_label("Ogrod", 44, Vector2(0, 24), VIEWPORT_WIDTH))
+
+	var move_icon := UiIcons.match_move(40)
+	move_icon.position = Vector2(810, 34)
+	add_child(move_icon)
+	moves_label = _label("", 30, Vector2(856, 30), 90)
+	moves_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	add_child(moves_label)
 
 	var coin_icon := UiIcons.plant_coin(40)
 	coin_icon.position = Vector2(960, 34)
@@ -78,7 +98,7 @@ func _ready() -> void:
 	add_child(back_btn)
 
 	_refresh()
-	_harvest_ready_plots()
+	_check_ready_plots()
 	_build_shared_controls()
 
 # Tydzien Low: gracz wybiera, czy sadzi razem ze znajomym. Gdy tak, na ekranie
@@ -142,7 +162,7 @@ func _process(delta: float) -> void:
 	if tick > 0.0:
 		return
 	tick = 1.0
-	_harvest_ready_plots()
+	_check_ready_plots()
 	_update_timers()
 	if bee == null and GameState.is_bee_here():
 		_spawn_bee()
@@ -170,6 +190,7 @@ func _button(text: String, color: Color, pos: Vector2, btn_size: Vector2) -> But
 func _refresh() -> void:
 	coin_label.text = str(GameState.plant_coins)
 	ruby_label.text = str(GameState.rubies)
+	moves_label.text = str(GameState.match_moves)
 	_build_tools()
 	_build_plots()
 	_update_timers()
@@ -218,6 +239,7 @@ func _build_plots() -> void:
 	for child in plots_layer.get_children():
 		child.queue_free()
 	timer_labels.clear()
+	growth_views.clear()
 	for i in range(GameState.GARDEN_PLOTS):
 		var btn := _button("", SOIL_COLOR, _plot_position(i), PLOT_SIZE)
 		var soil := UiIcons.soil_plot(PLOT_SIZE)
@@ -230,15 +252,73 @@ func _build_plots() -> void:
 				sapling.position = (PLOT_SIZE - sapling.size) / 2.0
 				btn.add_child(sapling)
 			GameState.PLOT_GROWING:
-				var plant_size := lerpf(70.0, 120.0, GameState.plot_growth(i))
-				var plant := UiIcons.plant_icon_tinted(GROWN_PLANT_IDX, plant_size, GROWN_TINT)
-				plant.position = Vector2((PLOT_SIZE.x - plant_size) / 2.0, PLOT_SIZE.y - plant_size - 34)
-				btn.add_child(plant)
+				_build_growth(btn, i)
 				var timer := _label("", 22, Vector2(0, PLOT_SIZE.y - 38), PLOT_SIZE.x)
 				btn.add_child(timer)
 				timer_labels[i] = timer
+			GameState.PLOT_READY:
+				_build_ready_plant(btn)
 		btn.pressed.connect(_on_plot_pressed.bind(i))
 		plots_layer.add_child(btn)
+
+# Wzrost: sadzonka powoli przechodzi w kolejne etapy (GRAFIKI_PROMPTY_6.md),
+# az do doroslej roslinki, i przy tym rosnie. Bez grafik etapow sadzonka
+# przenika sie wprost z dorosla roslinka.
+func _build_growth(btn: Button, i: int) -> void:
+	var stages := [UiIcons.sapling(GROWN_SIZE)]
+	for path in UiIcons.garden_stage_paths():
+		stages.append(UiIcons.texture_from(path, GROWN_SIZE))
+	stages.append(UiIcons.plant_icon_tinted(GROWN_PLANT_IDX, GROWN_SIZE, GROWN_TINT))
+	for stage in stages:
+		stage.position = Vector2((PLOT_SIZE.x - GROWN_SIZE) / 2.0, PLOT_SIZE.y - GROWN_SIZE - 34)
+		# Roslinka rosnie od ziemi w gore.
+		stage.pivot_offset = Vector2(GROWN_SIZE / 2.0, GROWN_SIZE)
+		btn.add_child(stage)
+	growth_views[i] = stages
+	_update_growth(i)
+
+func _update_growth(i: int) -> void:
+	var stages: Array = growth_views[i]
+	var growth := GameState.plot_growth(i)
+	var progress := growth * (stages.size() - 1)
+	var current := mini(int(progress), stages.size() - 2)
+	var blend := progress - current
+	for s in range(stages.size()):
+		var alpha := 0.0
+		if s == current:
+			alpha = 1.0 - blend
+		elif s == current + 1:
+			alpha = blend
+		stages[s].modulate.a = alpha
+		stages[s].scale = Vector2.ONE * lerpf(SAPLING_SCALE, 1.0, growth)
+
+# Gotowa roslinka: teczowa poswiata i nagrody, ktore gracz zbiera tapnieciem.
+func _build_ready_plant(btn: Button) -> void:
+	var glow := UiIcons.rainbow_glow(Vector2(GLOW_SIZE, GLOW_SIZE))
+	glow.position = Vector2((PLOT_SIZE.x - GLOW_SIZE) / 2.0, -14)
+	glow.pivot_offset = glow.size / 2.0
+	btn.add_child(glow)
+	var tw := glow.create_tween().set_loops()
+	tw.tween_property(glow, "scale", Vector2(1.08, 1.08), 0.6).set_trans(Tween.TRANS_SINE)
+	tw.tween_property(glow, "scale", Vector2.ONE, 0.6).set_trans(Tween.TRANS_SINE)
+
+	var plant := UiIcons.plant_icon_tinted(GROWN_PLANT_IDX, GROWN_SIZE, GROWN_TINT)
+	plant.position = Vector2((PLOT_SIZE.x - GROWN_SIZE) / 2.0, 0)
+	btn.add_child(plant)
+
+	var reward_y := PLOT_SIZE.y - REWARD_ICON_SIZE - 6
+	var coin := UiIcons.plant_coin(REWARD_ICON_SIZE)
+	coin.position = Vector2(12, reward_y)
+	btn.add_child(coin)
+	var coin_text := _label("+%d" % GameState.GARDEN_HARVEST_COINS, 22, Vector2(12 + REWARD_ICON_SIZE, reward_y - 2), 60)
+	coin_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	btn.add_child(coin_text)
+	var move := UiIcons.match_move(REWARD_ICON_SIZE)
+	move.position = Vector2(110, reward_y)
+	btn.add_child(move)
+	var move_text := _label("+%d" % GameState.GARDEN_HARVEST_MOVES, 22, Vector2(110 + REWARD_ICON_SIZE, reward_y - 2), 40)
+	move_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	btn.add_child(move_text)
 
 func _plot_position(i: int) -> Vector2:
 	return Vector2(
@@ -250,9 +330,15 @@ func _update_timers() -> void:
 	for i in timer_labels.keys():
 		var left := GameState.plot_seconds_left(i)
 		timer_labels[i].text = "%02d:%02d:%02d" % [left / 3600, (left % 3600) / 60, left % 60]
+	for i in growth_views.keys():
+		_update_growth(i)
 
 func _on_plot_pressed(i: int) -> void:
 	var state: String = GameState.garden_plots[i]["state"]
+	# Nagrody z gotowej roslinki zbiera sie tapnieciem, niezaleznie od narzedzia.
+	if state == GameState.PLOT_READY:
+		_collect(i)
+		return
 	match tool:
 		TOOL_SAPLING:
 			if state != GameState.PLOT_EMPTY:
@@ -287,32 +373,45 @@ func _spawn_bee() -> void:
 	bee.size = Vector2(BEE_SIZE, BEE_SIZE)
 	bee.position = Vector2(PLOTS_X, BEE_Y)
 	bee.focus_mode = Control.FOCUS_NONE
+	bee.pivot_offset = bee.size / 2.0
 	bee.add_child(UiIcons.bee(BEE_SIZE))
 	bee.pressed.connect(func(): _select_tool(TOOL_BEE))
 	add_child(bee)
-	var tw := bee.create_tween()
-	tw.set_loops()
-	tw.tween_property(bee, "position:x", PLOTS_X + 3.0 * PLOT_SIZE.x, 6.0).set_trans(Tween.TRANS_SINE)
-	tw.tween_property(bee, "position:x", PLOTS_X, 6.0).set_trans(Tween.TRANS_SINE)
+	bee_tween = bee.create_tween()
+	bee_tween.set_loops()
+	bee_tween.tween_property(bee, "position:x", PLOTS_X + 3.0 * PLOT_SIZE.x, 6.0).set_trans(Tween.TRANS_SINE)
+	bee_tween.tween_property(bee, "position:x", PLOTS_X, 6.0).set_trans(Tween.TRANS_SINE)
 
+# Przyspieszenie liczy sie od razu, a pszczolka podlatuje do roslinki, siada na
+# niej i dopiero potem odlatuje. Do jej powrotu nie mozna jej znowu uzyc.
 func _use_bee(i: int, state: String) -> void:
 	if state != GameState.PLOT_GROWING:
 		message_label.text = "Pszczolka pomaga tylko rosnacym roslinkom."
 		return
 	GameState.use_bee(i)
 	tool = TOOL_NONE
-	message_label.text = "Pszczolka przyspieszyla roslinke o 3 godziny!"
-	_fly_bee_away()
-	_refresh()
-	_harvest_ready_plots()
+	message_label.text = "Pszczolka leci do roslinki..."
+	_build_tools()
+	_fly_bee_to_plot(i)
 
-func _fly_bee_away() -> void:
-	var leaving := bee
+func _fly_bee_to_plot(i: int) -> void:
+	var visiting := bee
 	bee = null
-	leaving.disabled = true
-	var tw := leaving.create_tween()
-	tw.tween_property(leaving, "position", Vector2(VIEWPORT_WIDTH + BEE_SIZE, -BEE_SIZE), 1.0)
-	tw.tween_callback(leaving.queue_free)
+	visiting.disabled = true
+	bee_tween.kill()
+	var seat := _plot_position(i) + Vector2((PLOT_SIZE.x - BEE_SIZE) / 2.0, 10)
+	var tw := visiting.create_tween()
+	tw.tween_property(visiting, "position", seat, BEE_FLIGHT_TIME).set_trans(Tween.TRANS_SINE)
+	tw.tween_callback(func():
+		message_label.text = "Pszczolka przyspieszyla roslinke o 3 godziny!"
+		_refresh()
+		_check_ready_plots())
+	for _swing in range(BEE_SIT_SWINGS):
+		tw.tween_property(visiting, "rotation", 0.15, 0.35).set_trans(Tween.TRANS_SINE)
+		tw.tween_property(visiting, "rotation", -0.15, 0.35).set_trans(Tween.TRANS_SINE)
+	tw.tween_property(visiting, "rotation", 0.0, 0.2)
+	tw.tween_property(visiting, "position", Vector2(VIEWPORT_WIDTH + BEE_SIZE, -BEE_SIZE), BEE_FLIGHT_TIME)
+	tw.tween_callback(visiting.queue_free)
 
 # --- Przyspieszanie za rubiny ---
 func _show_rush_popup(i: int) -> void:
@@ -328,7 +427,7 @@ func _show_rush_popup(i: int) -> void:
 		_close_popup()
 		if GameState.rush_plot(i):
 			_refresh()
-			_harvest_ready_plots())
+			_check_ready_plots())
 	panel.add_child(yes_btn)
 
 func _close_popup() -> void:
@@ -336,33 +435,37 @@ func _close_popup() -> void:
 		popup.queue_free()
 		popup = null
 
-# --- Zbior: dorosla roslinka pokazuje sie, daje roslimonety i znika ---
-func _harvest_ready_plots() -> void:
-	var ready_plots := GameState.harvest_ready_plots()
-	if ready_plots.is_empty():
+# --- Zbior: gotowa roslinka czeka na tapniecie, a potem daje nagrody i znika ---
+func _check_ready_plots() -> void:
+	if GameState.mark_ready_plots().is_empty():
 		return
-	for i in ready_plots:
-		_show_harvest(i)
-	message_label.text = "Roslinka wyrosla! +%d roslimonet" % (GameState.GARDEN_HARVEST_COINS * ready_plots.size())
+	message_label.text = "Roslinka wyrosla! Tapnij ja, zeby zebrac nagrody."
 	_refresh()
 
-func _show_harvest(i: int) -> void:
-	var box := Control.new()
-	box.size = PLOT_SIZE
-	box.position = _plot_position(i)
-	box.pivot_offset = PLOT_SIZE / 2.0
-	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(box)
-	var plant := UiIcons.plant_icon_tinted(GROWN_PLANT_IDX, 130, GROWN_TINT)
-	plant.position = Vector2((PLOT_SIZE.x - 130) / 2.0, 0)
-	box.add_child(plant)
-	box.add_child(_label("+%d" % GameState.GARDEN_HARVEST_COINS, 28, Vector2(10, PLOT_SIZE.y - 44), 100))
-	var coin := UiIcons.plant_coin(40)
-	coin.position = Vector2(114, PLOT_SIZE.y - 44)
-	box.add_child(coin)
-	box.scale = Vector2(0.2, 0.2)
-	var tw := box.create_tween()
-	tw.tween_property(box, "scale", Vector2(1, 1), 0.4).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	tw.tween_interval(1.5)
-	tw.tween_property(box, "modulate:a", 0.0, 0.5)
-	tw.tween_callback(box.queue_free)
+func _collect(i: int) -> void:
+	if not GameState.collect_plot(i):
+		return
+	var origin := _plot_position(i)
+	message_label.text = "+%d roslimonet i +%d ruch do Roslinnych trojek!" % [GameState.GARDEN_HARVEST_COINS, GameState.GARDEN_HARVEST_MOVES]
+
+	# Roslinka maleje i znika, a nagrody leca do licznikow u gory.
+	var plant := UiIcons.plant_icon_tinted(GROWN_PLANT_IDX, GROWN_SIZE, GROWN_TINT)
+	plant.position = origin + Vector2((PLOT_SIZE.x - GROWN_SIZE) / 2.0, 0)
+	plant.pivot_offset = Vector2(GROWN_SIZE / 2.0, GROWN_SIZE)
+	add_child(plant)
+	var tw := plant.create_tween().set_parallel(true)
+	tw.tween_property(plant, "scale", Vector2(0.2, 0.2), 0.5).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
+	tw.tween_property(plant, "modulate:a", 0.0, 0.5)
+	tw.chain().tween_callback(plant.queue_free)
+
+	var reward_y := PLOT_SIZE.y - REWARD_ICON_SIZE - 6
+	_fly_reward(UiIcons.plant_coin(REWARD_ICON_SIZE), origin + Vector2(12, reward_y), Vector2(962, 36))
+	_fly_reward(UiIcons.match_move(REWARD_ICON_SIZE), origin + Vector2(110, reward_y), Vector2(812, 36))
+	_refresh()
+
+func _fly_reward(icon: Control, from: Vector2, to: Vector2) -> void:
+	icon.position = from
+	add_child(icon)
+	var tw := icon.create_tween()
+	tw.tween_property(icon, "position", to, 0.6).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+	tw.tween_callback(icon.queue_free)

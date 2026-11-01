@@ -22,6 +22,32 @@ const BEE_TEXTURE := "res://assets/sprites/ui/bee.png"
 const PADLOCK_TEXTURE := "res://assets/sprites/ui/padlock.png"
 const SOIL_TEXTURE := "res://assets/sprites/ui/soil_plot.png"
 const FOG_TEXTURE := "res://assets/sprites/ui/fog.png"
+# Grafiki z GRAFIKI_PROMPTY_6.md (do tego czasu rysunki z kodu).
+const MATCH_EVENT_TEXTURE := "res://assets/sprites/ui/match_event.png"
+const MATCH_MOVE_TEXTURE := "res://assets/sprites/ui/match_move.png"
+const MATCH_CELL_TEXTURE := "res://assets/sprites/ui/match_cell.png"
+const MATCH_POP_TEXTURE := "res://assets/sprites/ui/match_pop.png"
+const RENT_SLOT_TEXTURE := "res://assets/sprites/ui/rent_slot.png"
+# Etapy wzrostu roslinki w ogrodzie, od sadzonki do doroslej roslinki.
+const GARDEN_STAGE_TEXTURES := ["res://assets/sprites/ui/garden_stage_1.png", "res://assets/sprites/ui/garden_stage_2.png"]
+
+const BAR_BG_COLOR := Color(0.18, 0.14, 0.1)
+const BAR_EMPTY_COLOR := Color(0.42, 0.38, 0.32)
+const BAR_FILL_COLOR := Color(0.35, 0.8, 0.25)
+
+# Teczowa poswiata: kolory kraza wokol srodka, a krawedz jest przezroczysta.
+const RAINBOW_SHADER_CODE := """
+shader_type canvas_item;
+vec3 hue(float h) {
+	return clamp(abs(mod(h * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+}
+void fragment() {
+	vec2 p = UV - vec2(0.5);
+	float r = length(p) * 2.0;
+	float angle = atan(p.y, p.x) / 6.2832;
+	COLOR = vec4(hue(fract(angle + TIME * 0.35)), smoothstep(1.0, 0.3, r) * 0.9);
+}
+"""
 
 const TINT_SHADER_CODE := """
 shader_type canvas_item;
@@ -275,6 +301,103 @@ static func plant_coin(size: float) -> Control:
 	_poly(c, size, inner, Color(0.98, 0.82, 0.25))
 	_poly(c, size, [Vector2(0.5, 0.24), Vector2(0.68, 0.46), Vector2(0.5, 0.74), Vector2(0.32, 0.46)], Color(0.3, 0.68, 0.22))
 	return c
+
+# Pasek z rownymi kratkami, wypelnionymi do "filled" (jak ulepszenia w Plants
+# vs Zombies): ulepszenia roslin i punkty z Roslinnych trojek.
+static func segment_bar(bar_size: Vector2, filled: int, total: int, fill_color := BAR_FILL_COLOR) -> Control:
+	var c := Panel.new()
+	c.size = bar_size
+	c.custom_minimum_size = bar_size
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	c.add_theme_stylebox_override("panel", round_style(BAR_BG_COLOR, int(bar_size.y / 3.0)))
+	var pad := 3.0
+	var gap := 2.0
+	var seg_width := (bar_size.x - 2.0 * pad - gap * (total - 1)) / total
+	for i in range(total):
+		var seg := ColorRect.new()
+		seg.position = Vector2(pad + i * (seg_width + gap), pad)
+		seg.size = Vector2(seg_width, bar_size.y - 2.0 * pad)
+		seg.color = fill_color if i < filled else BAR_EMPTY_COLOR
+		seg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		c.add_child(seg)
+	return c
+
+# Ruch w Roslinnych trojkach: dwa kafelki i strzalki zamiany.
+static func match_move(size: float) -> Control:
+	var file_icon := _texture_icon(MATCH_MOVE_TEXTURE, size)
+	if file_icon != null:
+		return file_icon
+	var c := _box(size)
+	_poly(c, size, [Vector2(0.06, 0.34), Vector2(0.42, 0.34), Vector2(0.42, 0.7), Vector2(0.06, 0.7)], Color(0.45, 0.8, 0.3))
+	_poly(c, size, [Vector2(0.58, 0.34), Vector2(0.94, 0.34), Vector2(0.94, 0.7), Vector2(0.58, 0.7)], Color(0.95, 0.55, 0.2))
+	var arrow := Color(0.98, 0.85, 0.2)
+	var width := maxf(2.5, size * 0.07)
+	_line(c, size, [Vector2(0.24, 0.26), Vector2(0.5, 0.1), Vector2(0.76, 0.26)], arrow, width)
+	_poly(c, size, [Vector2(0.66, 0.22), Vector2(0.86, 0.2), Vector2(0.78, 0.38)], arrow)
+	_line(c, size, [Vector2(0.76, 0.78), Vector2(0.5, 0.94), Vector2(0.24, 0.78)], arrow, width)
+	_poly(c, size, [Vector2(0.34, 0.82), Vector2(0.14, 0.84), Vector2(0.22, 0.66)], arrow)
+	return c
+
+# Ikonka Roslinnych trojek: trzy roslinki w rzedzie.
+static func match_event(size: float) -> Control:
+	var file_icon := _texture_icon(MATCH_EVENT_TEXTURE, size)
+	if file_icon != null:
+		return file_icon
+	var c := _box(size)
+	for i in range(3):
+		var x := 0.04 + i * 0.32
+		_poly(c, size, [Vector2(x, 0.36), Vector2(x + 0.28, 0.36), Vector2(x + 0.28, 0.64), Vector2(x, 0.64)], Color(0.3, 0.55, 0.22))
+		var icon := plant_icon(1, size * 0.28)
+		icon.position = Vector2(x, 0.36) * size
+		c.add_child(icon)
+	_line(c, size, [Vector2(0.08, 0.76), Vector2(0.92, 0.76)], Color(0.98, 0.85, 0.2), max(2.0, size * 0.05))
+	return c
+
+# Wypozyczenie siodmego miejsca w talii: zloty klucz.
+static func rent_slot(size: float) -> Control:
+	var file_icon := _texture_icon(RENT_SLOT_TEXTURE, size)
+	if file_icon != null:
+		return file_icon
+	var c := _box(size)
+	var gold := Color(0.95, 0.75, 0.2)
+	var points := []
+	for i in range(16):
+		points.append(Vector2(0.3, 0.32) + Vector2.from_angle(TAU * i / 16.0) * 0.2)
+	_poly(c, size, points, gold)
+	_poly(c, size, [Vector2(0.42, 0.42), Vector2(0.9, 0.84), Vector2(0.84, 0.9), Vector2(0.36, 0.48)], gold)
+	_poly(c, size, [Vector2(0.66, 0.66), Vector2(0.76, 0.56), Vector2(0.82, 0.62), Vector2(0.72, 0.72)], gold)
+	_poly(c, size, [Vector2(0.24, 0.26), Vector2(0.36, 0.26), Vector2(0.36, 0.38), Vector2(0.24, 0.38)], Color(0.3, 0.6, 0.2))
+	return c
+
+# Kafelek planszy Roslinnych trojek; null, gdy nie ma grafiki (wtedy kolor).
+static func match_cell(size: float) -> TextureRect:
+	var icon := _texture_icon(MATCH_CELL_TEXTURE, size)
+	if icon != null:
+		icon.stretch_mode = TextureRect.STRETCH_SCALE
+	return icon
+
+# Rozblysk, gdy roslinki znikaja z planszy; null, gdy nie ma grafiki.
+static func match_pop(size: float) -> TextureRect:
+	return _texture_icon(MATCH_POP_TEXTURE, size)
+
+# Teczowa poswiata wokol gotowej roslinki w ogrodzie.
+static func rainbow_glow(size: Vector2) -> ColorRect:
+	var glow := ColorRect.new()
+	glow.size = size
+	glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var shader := Shader.new()
+	shader.code = RAINBOW_SHADER_CODE
+	var material := ShaderMaterial.new()
+	material.shader = shader
+	glow.material = material
+	return glow
+
+# Etapy wzrostu w ogrodzie, ktore juz sa w grze (sciezki plikow).
+static func garden_stage_paths() -> Array:
+	return GARDEN_STAGE_TEXTURES.filter(func(path): return ResourceLoader.exists(path))
+
+static func texture_from(path: String, size: float) -> TextureRect:
+	return _texture_icon(path, size)
 
 # Klodka (ikonka rosliny, ktorej gracz jeszcze nie odblokowal).
 static func padlock(size: float) -> Control:
