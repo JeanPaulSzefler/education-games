@@ -85,7 +85,14 @@ junk-vs-plants/
 3. **Project → Export...** → dodaj preset "Android" → **Export Project** → zapisz plik `.apk`.
 4. Przenieś `.apk` na telefon (kabel/USB, Google Drive, itp.) i zainstaluj (włącz "Instalacja z nieznanych źródeł" w ustawieniach Androida), albo użyj `adb install junk-vs-plants.apk` po podłączeniu telefonu kablem z włączonym trybem debugowania USB.
 
-Gotowe wersje testowe trafiają do `releases/` pod nazwą `JunkVsPlants-<data>-<commit>.apk`. Pliki `.apk` są śledzone przez Git, a `.gdignore` sprawia, że Godot pomija ten folder.
+Gotowe wersje testowe trafiają do `releases/`. Od 2026-11-02 nazwa ma numer wersji w zwykłym formacie `GŁÓWNA.MNIEJSZA.POPRAWKA`: `JvP_v<X.Y.Z>.apk`, np. `JvP_v1.1.0.apk`. Starsze pliki zostają pod nazwami `JunkVsPlants-<data>-<commit>.apk`, a ostatni z nich (2026-11-02, `b469349`) to wersja 1.0.0.
+
+- Same poprawki błędów: rośnie ostatnia liczba (1.1.0 → 1.1.1).
+- Nowe funkcje (wydarzenia, ekrany, mechaniki): rośnie środkowa liczba, a ostatnia wraca do 0 (1.1.1 → 1.2.0).
+- Pierwsza liczba rośnie tylko przy dużej zmianie, ustalonej z autorem gry.
+- Przed eksportem ten sam numer trzeba wpisać w `export_presets.cfg` (`version/name`), a `version/code` zwiększyć o 1, żeby Android instalował nową wersję jako aktualizację.
+
+Pliki `.apk` są śledzone przez Git, a `.gdignore` sprawia, że Godot pomija ten folder.
 
 ## Co dalej (kolejne kroki rozwoju)
 
