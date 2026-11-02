@@ -26,8 +26,9 @@ const POPUP_TEXT_COLOR := Color(0.15, 0.12, 0.1)
 const CORNER_BTN_COLOR := Color(0.3, 0.45, 0.25)
 const OK_BTN_COLOR := Color(0.25, 0.6, 0.25)
 const SELECTED_ICON_BORDER := Color(0.95, 0.75, 0.1)
-const GREETING_SECONDS := 3.0
+const GREETING_SECONDS := 5.0
 const DELETE_BTN_COLOR := Color(0.75, 0.18, 0.15)
+const MOVES_BADGE_COLOR := Color(0.85, 0.3, 0.2)
 # Ikonka "Moich roslinek" - Lisc Bananowca (indeks w PlantData.TYPES).
 const MY_PLANTS_ICON_PLANT := 2
 const GAME_RULES_TEXT := "Smieciostwory ida przez ogrod do domu - nie pozwol im dojsc! " + \
@@ -36,9 +37,11 @@ const GAME_RULES_TEXT := "Smieciostwory ida przez ogrod do domu - nie pozwol im 
 	"Za kazdy wygrany poziom dostajesz rubin (raz na poziom). " + \
 	"Co kilka poziomow na sciezce czeka nowa roslinka - wejdz w jej kolko, zeby ja odblokowac. " + \
 	"Miedzy roslinkami stoja skrzynie z rubinami i roslimonetami. " + \
-	"Pokonana roslinka po prostu znika. Nawozy pojawiaja sie same na planszy - tapnij, zeby je zebrac; ich limit zwiekszysz w sklepie."
+	"Pokonana roslinka po prostu znika. Nawozy pojawiaja sie same na planszy - tapnij, zeby je zebrac; ich limit zwiekszysz w sklepie. " + \
+	"W Roslinnych trojkach zamieniasz sasiednie roslinki, zeby ulozyc 3 takie same w rzedzie - 8 punktow to ulepszenie tej roslinki. " + \
+	"Ruchy dostajesz za roslinki wyhodowane w ogrodzie, a czasem w skrzyni."
 const SHOP_OFFERS := [
-	{"rubies": 2, "price": "Reklama"},
+	{"rubies": 2, "price": "Reklama", "ad": true},
 	{"rubies": 10, "price": "5 zl"},
 	{"rubies": 20, "price": "9 zl"},
 	{"rubies": 50, "price": "20 zl"},
@@ -64,6 +67,7 @@ var plant_hit_nodes: Array = []
 # Skrzynie, ktore mozna teraz otworzyc: lista {"chest_level", "rect"}
 var chest_hit_nodes: Array = []
 var ruby_label: Label
+var coin_label: Label
 
 var min_offset := 0.0
 var max_offset := 0.0
@@ -507,6 +511,21 @@ func _build_corner_buttons() -> void:
 	_add_centered_icon(book_btn, UiIcons.book(CORNER_BTN_SIZE - 16))
 	book_btn.pressed.connect(_show_game_info)
 
+	# Roslinne trojki: wydarzenie stale, zawsze u gory ekranu, z liczba ruchow.
+	var match_btn := _make_corner_button(Vector2(CORNER_MARGIN + CORNER_BTN_SIZE + 50, CORNER_MARGIN), "Roslinne trojki")
+	_add_centered_icon(match_btn, UiIcons.match_event(CORNER_BTN_SIZE - 16))
+	match_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/PlantMatch.tscn"))
+	var moves_badge := Label.new()
+	moves_badge.text = str(GameState.match_moves)
+	moves_badge.size = Vector2(36, 36)
+	moves_badge.position = Vector2(CORNER_BTN_SIZE - 26, -10)
+	moves_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	moves_badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	moves_badge.add_theme_font_size_override("font_size", 18)
+	moves_badge.add_theme_stylebox_override("normal", UiIcons.round_style(MOVES_BADGE_COLOR, 18))
+	moves_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	match_btn.add_child(moves_badge)
+
 	var shop_x := VIEWPORT_WIDTH - CORNER_MARGIN - CORNER_BTN_SIZE
 	var shop_btn := _make_corner_button(Vector2(shop_x, CORNER_MARGIN), "Sklep")
 	_add_centered_icon(shop_btn, UiIcons.shop(CORNER_BTN_SIZE - 16))
@@ -520,7 +539,7 @@ func _build_corner_buttons() -> void:
 	var coin_icon := UiIcons.plant_coin(40)
 	coin_icon.position = Vector2(shop_x - 190, CORNER_MARGIN + (CORNER_BTN_SIZE - 40) / 2.0)
 	add_child(coin_icon)
-	var coin_label := Label.new()
+	coin_label = Label.new()
 	coin_label.text = str(GameState.plant_coins)
 	coin_label.position = Vector2(shop_x - 190 - 110, CORNER_MARGIN + (CORNER_BTN_SIZE - 44) / 2.0)
 	coin_label.size = Vector2(100, 44)
@@ -741,8 +760,13 @@ func _show_chest(chest_level: int) -> void:
 	var tw := icon.create_tween()
 	tw.tween_property(icon, "scale", Vector2(1, 1), 0.6).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
-	_add_reward_row(panel, 150.0, "+%d" % reward["rubies"], UiIcons.ruby(56))
-	_add_reward_row(panel, 340.0, "+%d" % reward["coins"], UiIcons.plant_coin(56))
+	if reward["moves"] > 0:
+		_add_reward_row(panel, 50.0, "+%d" % reward["rubies"], UiIcons.ruby(56))
+		_add_reward_row(panel, 240.0, "+%d" % reward["coins"], UiIcons.plant_coin(56))
+		_add_reward_row(panel, 430.0, "+%d" % reward["moves"], UiIcons.match_move(56))
+	else:
+		_add_reward_row(panel, 150.0, "+%d" % reward["rubies"], UiIcons.ruby(56))
+		_add_reward_row(panel, 340.0, "+%d" % reward["coins"], UiIcons.plant_coin(56))
 
 	var ok_btn := _popup_button("Super!", OK_BTN_COLOR, Vector2((panel.size.x - 220) / 2.0, 400), Vector2(220, 70))
 	ok_btn.pressed.connect(func(): get_tree().reload_current_scene())
@@ -799,17 +823,23 @@ func _show_game_info() -> void:
 		list.add_child(more)
 
 # "Moje roslinki": wszystkie rosliny - odblokowane w kolorze, reszta jako
-# cien ze znakiem zapytania. Tapniecie odblokowanej pokazuje jej opis.
-func _show_my_plants() -> void:
+# cien. Tapniecie rosliny pokazuje jej opis i ulepszenie; ulepszac mozna takze
+# te, ktorych gracz jeszcze nie odblokowal.
+func _show_my_plants(selected := -1) -> void:
 	var panel := _open_popup(Vector2(1000, 620), "Moje roslinki")
 	var per_row := 7
 	var cell := 116.0
 	var gap := 14.0
 	var start_x := (panel.size.x - (per_row * cell + (per_row - 1) * gap)) / 2.0
 
-	var desc := _popup_label("Tapnij roslinke, zeby zobaczyc, co robi.", 20)
-	desc.position = Vector2(40, 500)
-	desc.size = Vector2(panel.size.x - 80, 100)
+	var desc := _popup_label("Tapnij roslinke, zeby zobaczyc, co robi, i ja ulepszyc.", 20)
+	if selected >= 0:
+		desc.text = _plant_summary(selected)
+		if not GameState.is_plant_unlocked(selected):
+			desc.text += " Odblokujesz ja na poziomie %d." % PlantData.TYPES[selected].get("unlock_level", 1)
+		_build_plant_upgrade(panel, selected)
+	desc.position = Vector2(40, 442)
+	desc.size = Vector2(panel.size.x - 80, 76)
 	desc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	panel.add_child(desc)
@@ -821,25 +851,64 @@ func _show_my_plants() -> void:
 		btn.size = Vector2(cell, cell)
 		btn.focus_mode = Control.FOCUS_NONE
 		UiIcons.style_button(btn, Color(0.55, 0.8, 0.4) if unlocked else Color(0.55, 0.55, 0.55), 16)
-		btn.disabled = not unlocked
 		var icon := UiIcons.plant_icon(p_idx, cell - 16)
 		icon.position = Vector2(8, 8)
 		if not unlocked:
 			icon.modulate = Color(0.15, 0.15, 0.15)
 		btn.add_child(icon)
-		btn.pressed.connect(func(): desc.text = _plant_summary(p_idx))
+		btn.pressed.connect(func(): _show_my_plants(p_idx))
 		panel.add_child(btn)
 
-		var name_label := _popup_label(PlantData.TYPES[p_idx]["name"] if unlocked else "?", 15)
+		var name_label := _popup_label(PlantData.TYPES[p_idx]["name"], 15)
 		name_label.position = Vector2(btn.position.x - 10, btn.position.y + cell + 2)
 		name_label.size = Vector2(cell + 20, 22)
 		name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		panel.add_child(name_label)
 
-# Sklep: oferty rubinow z notatek 2026-10-06. Zakupy za pieniadze i reklamy
-# wymagaja uslug Google Play (platnosci, AdMob), wiec na razie to tylko
-# podglad ofert z nieaktywnymi przyciskami. Za rubiny dziala zwiekszanie
-# limitu nawozow.
+		var level_bar := UiIcons.segment_bar(Vector2(cell, 14), GameState.plant_upgrade_level(p_idx), GameState.PLANT_UPGRADE_MAX_LEVEL)
+		level_bar.position = Vector2(btn.position.x, btn.position.y + cell + 28)
+		panel.add_child(level_bar)
+
+# Poziom ulepszenia wybranej rosliny (pasek jak w Plants vs Zombies) i przycisk
+# zakupu kolejnego.
+func _build_plant_upgrade(panel: Panel, plant_idx: int) -> void:
+	var level := GameState.plant_upgrade_level(plant_idx)
+	var level_bar := UiIcons.segment_bar(Vector2(260, 28), level, GameState.PLANT_UPGRADE_MAX_LEVEL)
+	level_bar.position = Vector2(40, 547)
+	panel.add_child(level_bar)
+
+	var effect: String = PlantData.UPGRADE_EFFECTS[PlantData.TYPES[plant_idx]["role"]]
+	var bonus := (GameState.plant_power(plant_idx) - 1.0) * 100.0
+	var info := _popup_label("+%.1f%% (%s). Masz rubinow: %d" % [bonus, effect, GameState.rubies], 20)
+	info.position = Vector2(316, 526)
+	info.size = Vector2(panel.size.x - 316 - 310, 70)
+	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	info.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	panel.add_child(info)
+
+	var price := GameState.plant_upgrade_price(plant_idx)
+	var buy_text := "Maksimum" if price < 0 else "Ulepsz za %d" % price
+	var buy_btn := _popup_button(buy_text, OK_BTN_COLOR, Vector2(panel.size.x - 290, 526), Vector2(210, 70))
+	buy_btn.disabled = price < 0 or GameState.rubies < price
+	buy_btn.pressed.connect(func():
+		if GameState.buy_plant_upgrade(plant_idx):
+			ruby_label.text = str(GameState.rubies)
+			_show_my_plants(plant_idx))
+	panel.add_child(buy_btn)
+	var ruby := UiIcons.ruby(40)
+	ruby.position = Vector2(panel.size.x - 70, 541)
+	panel.add_child(ruby)
+
+# Oferta "za reklame": zamiast reklamy gra pokazuje napis, a potem daje nagrode.
+func _on_ad_offer_pressed() -> void:
+	_show_greeting(func():
+		GameState.claim_ad_offer()
+		ruby_label.text = str(GameState.rubies)
+		_show_shop())
+
+# Sklep: oferty rubinow z notatek 2026-10-06. Zakupy za pieniadze wymagaja uslug
+# Google Play, wiec na razie to tylko podglad ofert z nieaktywnymi przyciskami.
+# Ponizej lista wszystkiego, co mozna kupic za rubiny i roslimonety.
 func _show_shop() -> void:
 	var panel := _open_popup(Vector2(960, 640), "Sklep")
 	var card_size := Vector2(160, 220)
@@ -867,58 +936,108 @@ func _show_shop() -> void:
 		var price_btn := _popup_button(price, Color(0.3, 0.5, 0.75), Vector2(14, card_size.y - 84), Vector2(card_size.x - 28, 64))
 		price_btn.add_theme_font_size_override("font_size", 24 if price.length() < 7 else 19)
 		price_btn.disabled = true
+		if offer.get("ad", false):
+			price_btn.disabled = not GameState.is_ad_offer_ready()
+			if price_btn.disabled:
+				price_btn.text = "Jutro"
+			price_btn.pressed.connect(_on_ad_offer_pressed)
 		card.add_child(price_btn)
 
-	var info := _popup_label("Zakupy za pieniadze i reklamy dodamy pozniej.", 20)
-	info.position = Vector2(0, 298)
+	var info := _popup_label("Masz: %d rubinow, %d roslimonet. Zakupy za pieniadze dodamy pozniej." %[GameState.rubies, GameState.plant_coins], 20)
+	info.position = Vector2(0, 294)
 	info.size = Vector2(panel.size.x, 34)
 	info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	info.add_theme_color_override("font_color", Color(0.5, 0.3, 0.2))
 	panel.add_child(info)
 
-	_build_fertilizer_limit_offer(panel)
+	var scroll := ScrollContainer.new()
+	scroll.position = Vector2(30, 334)
+	scroll.size = Vector2(panel.size.x - 60, panel.size.y - 350)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	panel.add_child(scroll)
+	var list := VBoxContainer.new()
+	list.custom_minimum_size = Vector2(scroll.size.x - 20, 0)
+	list.add_theme_constant_override("separation", 8)
+	scroll.add_child(list)
+	_build_ruby_offers(list)
+	_build_coin_offers(list)
 
-# Oferta za rubiny: kolejne miejsce na nawoz. Limit najwyzej 6.
-func _build_fertilizer_limit_offer(panel: Panel) -> void:
-	var card := Panel.new()
-	card.position = Vector2(50, 350)
-	card.size = Vector2(panel.size.x - 100, 230)
-	card.add_theme_stylebox_override("panel", UiIcons.round_style(Color(1.0, 0.98, 0.92), 14))
-	panel.add_child(card)
+# Wiersz listy zakupow: opis i przycisk z cena. Nieaktywny przycisk, gdy kupno
+# nie jest teraz mozliwe; "on_buy" zwraca true po udanym zakupie.
+func _add_shop_row(list: VBoxContainer, text: String, price_text: String, price_icon: Control, enabled: bool, on_buy: Callable) -> void:
+	var row := Panel.new()
+	row.custom_minimum_size = Vector2(list.custom_minimum_size.x, 66)
+	row.add_theme_stylebox_override("panel", UiIcons.round_style(Color(1.0, 0.98, 0.92), 12))
+	list.add_child(row)
 
-	var icon := TextureRect.new()
-	icon.texture = load("res://assets/sprites/ui/fertilizer.png")
-	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	icon.size = Vector2(130, 130)
-	icon.position = Vector2(30, 50)
-	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	card.add_child(icon)
+	var label := _popup_label(text, 19)
+	label.position = Vector2(14, 0)
+	label.size = Vector2(row.custom_minimum_size.x - 270, 66)
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(label)
 
-	var title := _popup_label("Limit nawozow: %d" % GameState.fertilizer_limit, 30)
-	title.position = Vector2(190, 44)
-	card.add_child(title)
-
-	var rubies_info := _popup_label("Masz rubinow: %d" % GameState.rubies, 20)
-	rubies_info.position = Vector2(190, 96)
-	card.add_child(rubies_info)
-
-	var price := GameState.next_fertilizer_limit_price()
-	if price < 0:
-		var max_label := _popup_label("Masz juz najwiekszy limit.", 22)
-		max_label.position = Vector2(190, 140)
-		card.add_child(max_label)
-		return
-	var buy_btn := _popup_button("Kup za %d" % price, OK_BTN_COLOR, Vector2(card.size.x - 300, 80), Vector2(220, 70))
-	buy_btn.disabled = GameState.rubies < price
-	buy_btn.pressed.connect(func():
-		if GameState.buy_fertilizer_limit():
+	var btn := _popup_button(price_text, OK_BTN_COLOR, Vector2(row.custom_minimum_size.x - 240, 8), Vector2(180, 50))
+	btn.add_theme_font_size_override("font_size", 20)
+	btn.disabled = not enabled
+	btn.pressed.connect(func():
+		if on_buy.call():
 			ruby_label.text = str(GameState.rubies)
+			coin_label.text = str(GameState.plant_coins)
 			_show_shop())
-	card.add_child(buy_btn)
-	var ruby := UiIcons.ruby(40)
-	ruby.position = Vector2(card.size.x - 72, 95)
-	card.add_child(ruby)
+	row.add_child(btn)
+	price_icon.position = Vector2(row.custom_minimum_size.x - 50, 15)
+	row.add_child(price_icon)
+
+func _build_ruby_offers(list: VBoxContainer) -> void:
+	list.add_child(_popup_label("Za rubiny", 24))
+	var limit_price := GameState.next_fertilizer_limit_price()
+	if limit_price < 0:
+		_add_shop_row(list, "Limit nawozow: %d (najwiekszy)" % GameState.fertilizer_limit, "Maksimum", UiIcons.ruby(36), false, func(): return false)
+	else:
+		_add_shop_row(list, "Limit nawozow: %d, kup miejsce na kolejny" % GameState.fertilizer_limit, "Kup za %d" % limit_price, UiIcons.ruby(36),
+			GameState.rubies >= limit_price, GameState.buy_fertilizer_limit)
+
+	var plot := GameState.soonest_growing_plot()
+	var rush_text := "Ogrod: przyspiesz roslinke, ktora urosnie najszybciej" if plot >= 0 else "Ogrod: przyspieszenie roslinki (teraz nic nie rosnie)"
+	_add_shop_row(list, rush_text, "Kup za %d" % GameState.GARDEN_RUSH_RUBIES, UiIcons.ruby(36),
+		plot >= 0 and GameState.rubies >= GameState.GARDEN_RUSH_RUBIES,
+		func():
+			var bought := GameState.rush_plot(plot)
+			GameState.mark_ready_plots()
+			return bought)
+
+	var upgrade_row := _popup_label("Ulepszenia roslin kupisz w \"Moich roslinkach\": tapnij roslinke.", 18)
+	upgrade_row.custom_minimum_size = Vector2(list.custom_minimum_size.x, 30)
+	list.add_child(upgrade_row)
+	var rent_row := _popup_label("7. miejsce w talii (%d rubiny na jedna gre) wypozyczysz przed poziomem, przy wyborze roslin." % GameState.RENT_SLOT_RUBIES, 18)
+	rent_row.custom_minimum_size = Vector2(list.custom_minimum_size.x, 30)
+	list.add_child(rent_row)
+
+# Pomoce do wydarzen widac wszystkie, ale kupic mozna tylko te z biezacego.
+func _build_coin_offers(list: VBoxContainer) -> void:
+	list.add_child(_popup_label("Za roslimonety", 24))
+	var current := GameState.current_event()
+	for event in EventData.ROTATION:
+		var is_current: bool = not current.is_empty() and event["id"] == current["id"]
+		if event.has("help"):
+			var help: Dictionary = event["help"]
+			if is_current and GameState.event_help_prepaid:
+				_add_shop_row(list, "%s: %s" % [event["name"], help["text"]], "Kupione", UiIcons.plant_coin(36), false, func(): return false)
+			else:
+				var suffix := "" if is_current else " (gdy trwa to wydarzenie)"
+				_add_shop_row(list, "%s: %s%s" % [event["name"], help["text"], suffix], "Kup za %d" % help["cost"], UiIcons.plant_coin(36),
+					is_current and GameState.plant_coins >= help["cost"], GameState.buy_event_help)
+		if event.get("belt_preview", false):
+			var cost: int = event["preview_swap_cost"]
+			var swap_text := "%s: wymiana rosliny (masz %d)" % [event["name"], GameState.event_swap_credits] if is_current else "%s: wymiana rosliny (gdy trwa to wydarzenie)" % event["name"]
+			_add_shop_row(list, swap_text, "Kup za %d" % cost, UiIcons.plant_coin(36),
+				is_current and GameState.plant_coins >= cost, GameState.buy_swap_credit)
+		if event.get("shared_garden", false):
+			var ready: bool = is_current and GameState.is_shared_garden_on()
+			var gift_text := "Sadzenie razem: dodatkowa sadzonka dla znajomego (masz %d)" % GameState.shared_gift_credits if ready else "Sadzenie razem: dodatkowa sadzonka dla znajomego (po zatwierdzeniu w ogrodzie, w tygodniu Lowow)"
+			_add_shop_row(list, gift_text, "Kup za %d" % EventData.GIFT_COST, UiIcons.plant_coin(36),
+				ready and GameState.plant_coins >= EventData.GIFT_COST, GameState.buy_gift_credit)
 
 # Zmiana nazwy i ikony gracza. Ikonka roslinki ma trzy stany: klodka (roslina
 # jeszcze zablokowana), szara (do odblokowania w kilku krokach) i kolorowa (do
@@ -939,6 +1058,10 @@ func _show_player_edit(draft_name := GameState.player_name, draft_icon := GameSt
 	name_edit.size = Vector2(400, 52)
 	name_edit.add_theme_font_size_override("font_size", 24)
 	panel.add_child(name_edit)
+
+	var code_btn := _popup_button("Kod testowy", CORNER_BTN_COLOR, Vector2(570, 76), Vector2(200, 52))
+	code_btn.pressed.connect(_show_code_entry)
+	panel.add_child(code_btn)
 
 	var icon_caption := _popup_label("Ikona:", 22)
 	icon_caption.position = Vector2(40, 182)
@@ -1049,15 +1172,108 @@ func _show_icon_unlock(plant_idx: int, draft_name: String, draft_icon: int) -> v
 				_show_icon_unlock(plant_idx, draft_name, draft_icon)))
 	panel.add_child(step_btn)
 
-# Zamiast reklam: napis "dobrego dnia!" przez chwile na ekranie.
+# Zamiast reklam: napis z ikonka sadzonki i odliczaniem przez 5 sekund. Wszystkie
+# opcje "za reklame" uzywaja tego samego okienka.
 func _show_greeting(on_finished: Callable) -> void:
-	var panel := _open_popup(Vector2(640, 240), "", false)
-	var greeting := _popup_label("dobrego dnia!", 48)
-	greeting.size = panel.size
-	greeting.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	greeting.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	panel.add_child(greeting)
-	popup.create_tween().tween_callback(on_finished).set_delay(GREETING_SECONDS)
+	var panel := _open_popup(Vector2(640, 300), "", false)
+	var row := HBoxContainer.new()
+	row.position = Vector2(0, 50)
+	row.size = Vector2(panel.size.x, 90)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 18)
+	panel.add_child(row)
+	row.add_child(_popup_label("Miłego grania!", 48))
+	row.add_child(UiIcons.sapling(80))
+
+	var countdown := _popup_label(str(int(GREETING_SECONDS)), 56)
+	countdown.position = Vector2(0, 170)
+	countdown.size = Vector2(panel.size.x, 80)
+	countdown.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	panel.add_child(countdown)
+
+	var tw := popup.create_tween()
+	tw.tween_method(func(left: float): countdown.text = str(ceili(left)), GREETING_SECONDS, 0.0, GREETING_SECONDS)
+	tw.tween_callback(on_finished)
+
+# --- Kod testowy: poprawny kod pozwala raz zmienic wydarzenie. Wyjscie z tych
+# okienek albo zmiana wydarzenia zuzywa kod, wiec nastepnym razem trzeba wpisac go znowu. ---
+func _show_code_entry() -> void:
+	var panel := _open_popup(Vector2(620, 320), "Kod testowy")
+
+	var code_edit := LineEdit.new()
+	code_edit.placeholder_text = "Wpisz kod"
+	code_edit.position = Vector2(110, 86)
+	code_edit.size = Vector2(400, 56)
+	code_edit.add_theme_font_size_override("font_size", 26)
+	panel.add_child(code_edit)
+
+	var error_label := _popup_label("", 20)
+	error_label.position = Vector2(0, 150)
+	error_label.size = Vector2(panel.size.x, 30)
+	error_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	error_label.add_theme_color_override("font_color", Color(0.75, 0.2, 0.15))
+	panel.add_child(error_label)
+
+	var ok_btn := _popup_button("Sprawdz", OK_BTN_COLOR, Vector2((panel.size.x - 220) / 2.0, 206), Vector2(220, 70))
+	ok_btn.pressed.connect(func():
+		if GameState.try_test_code(code_edit.text):
+			_show_event_switch()
+		else:
+			_update_code_entry(code_edit, error_label, ok_btn, "Niepoprawny kod."))
+	panel.add_child(ok_btn)
+	_update_code_entry(code_edit, error_label, ok_btn, "")
+
+# Podczas blokady pole i przycisk sa nieaktywne, a napis podaje pozostaly czas.
+func _update_code_entry(code_edit: LineEdit, error_label: Label, ok_btn: Button, message: String) -> void:
+	var lock_left := GameState.test_code_lock_seconds_left()
+	code_edit.editable = lock_left == 0
+	ok_btn.disabled = lock_left > 0
+	error_label.text = message
+	if lock_left > 0:
+		code_edit.text = ""
+		error_label.text = "Za duzo prob. Sprobuj za %d min." % ceili(lock_left / 60.0)
+
+func _show_event_switch() -> void:
+	var panel := _open_popup(Vector2(1080, 640), "Wybierz wydarzenie")
+	var columns := 3
+	var btn_size := Vector2(330, 90)
+	var gap := 14.0
+	var start_x := (panel.size.x - (columns * btn_size.x + (columns - 1) * gap)) / 2.0
+	for i in range(EventData.ROTATION.size()):
+		var event: Dictionary = EventData.ROTATION[i]
+		var pos := Vector2(start_x + (i % columns) * (btn_size.x + gap), 76 + int(i / float(columns)) * (btn_size.y + gap))
+		var btn := _popup_button(event["name"], CORNER_BTN_COLOR, pos, btn_size)
+		btn.add_theme_font_size_override("font_size", 22)
+		btn.disabled = i == GameState.event_index and not GameState.current_event().is_empty()
+		var event_idx := i
+		btn.pressed.connect(func(): _show_progress_choice(event_idx))
+		panel.add_child(btn)
+
+# Postepy obecnego wydarzenia: gracz decyduje, czy maja zostac na pozniej.
+func _show_progress_choice(event_idx: int) -> void:
+	var current := GameState.current_event()
+	if current.is_empty():
+		_finish_event_switch(event_idx, false)
+		return
+	var panel := _open_popup(Vector2(680, 340), "", false)
+	var question := _popup_label("Zapisac postepy z wydarzenia \"%s\"?" % current["name"], 28)
+	question.position = Vector2(40, 40)
+	question.size = Vector2(panel.size.x - 80, 130)
+	question.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	question.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	panel.add_child(question)
+
+	var drop_btn := _popup_button("Nie zapisuj", DELETE_BTN_COLOR, Vector2(50, 220), Vector2(270, 80))
+	drop_btn.pressed.connect(func(): _finish_event_switch(event_idx, false))
+	panel.add_child(drop_btn)
+
+	var keep_btn := _popup_button("Zapisz", OK_BTN_COLOR, Vector2(panel.size.x - 320, 220), Vector2(270, 80))
+	keep_btn.pressed.connect(func(): _finish_event_switch(event_idx, true))
+	panel.add_child(keep_btn)
+
+func _finish_event_switch(event_idx: int, keep_progress: bool) -> void:
+	GameState.switch_event(event_idx, keep_progress)
+	get_tree().change_scene_to_file("res://scenes/Events.tscn")
 
 func _show_net_notice() -> void:
 	var panel := _open_popup(Vector2(640, 220), "Gra zespolowa")

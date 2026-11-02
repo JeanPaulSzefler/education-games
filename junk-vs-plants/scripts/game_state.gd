@@ -19,6 +19,8 @@ const V4_ENDLESS_INDEX := 56
 # prawdopodobne.
 const CHEST_RUBY_WEIGHTS := {1: 60, 2: 30, 3: 10}
 const CHEST_COIN_WEIGHTS := {100: 40, 150: 28, 200: 18, 250: 10, 300: 4}
+# Ruchy do Roslinnych trojek: najczesciej skrzynia nie daje zadnego.
+const CHEST_MOVE_WEIGHTS := {0: 60, 1: 30, 2: 10}
 
 # Nagroda za wygrana gre zespolowa, dla obu graczy.
 const TEAM_WIN_RUBIES := 1
@@ -29,11 +31,38 @@ const TEAM_WIN_COINS := 50
 const FERTILIZER_START_LIMIT := 2
 const FERTILIZER_LIMIT_PRICES := [5, 6, 7, 8]
 
-# Ogrod: 8 pol, roslinka rosnie 15 godzin i daje 50 roslimonet. Przyspieszenie
-# kosztuje 15 rubinow, a pszczolka zabiera 3 godziny i wraca po 15-30 minutach.
+# Oferta "za reklame" w sklepie: raz dziennie (notatki 2026-10-06).
+const AD_OFFER_RUBIES := 2
+
+# Ulepszenia roslin: kazdy z 10 poziomow to tylko +1,5% sily (razem +15%), a cena
+# rosnie od 10 do 28 rubinow. Cala sciezka daje ok. 75 rubinow, wiec ulepszenia
+# nie zastepuja planowania na planszy.
+const PLANT_UPGRADE_MAX_LEVEL := 10
+const PLANT_UPGRADE_STEP := 0.015
+const PLANT_UPGRADE_BASE_PRICE := 10
+const PLANT_UPGRADE_PRICE_STEP := 2
+
+# Roslinne trojki (wydarzenie stale): plansza COLS x ROWS ze wszystkimi roslinami,
+# a 8 punktow przy roslinie zamienia sie w jedno jej ulepszenie.
+const MATCH_COLS := 8
+const MATCH_ROWS := 6
+const MATCH_POINTS_PER_UPGRADE := 8
+
+# Siodme miejsce w talii na jedna gre na sciezce, wypozyczane za rubiny.
+const RENT_SLOT_RUBIES := 3
+
+# Kod testowy pozwala raz zmienic wydarzenie. W kodzie gry jest tylko jego skrot.
+const TEST_CODE_SHA256 := "e0277cd898e021d443fe6817322b8f98623cb9a0a366e5daa39e03c47bf79959"
+const TEST_CODE_MAX_FAILURES := 3
+const TEST_CODE_LOCK_SECONDS := 10 * 60
+
+# Ogrod: 8 pol, roslinka rosnie 15 godzin i daje 50 roslimonet i ruch do
+# Roslinnych trojek. Przyspieszenie kosztuje 15 rubinow, a pszczolka zabiera
+# 3 godziny i wraca po 15-30 minutach.
 const GARDEN_PLOTS := 8
 const GARDEN_GROW_SECONDS := 15 * 3600
 const GARDEN_HARVEST_COINS := 50
+const GARDEN_HARVEST_MOVES := 1
 const GARDEN_RUSH_RUBIES := 15
 const GARDEN_BEE_SECONDS := 3 * 3600
 const BEE_RETURN_MIN_SECONDS := 15 * 60
@@ -41,6 +70,8 @@ const BEE_RETURN_MAX_SECONDS := 30 * 60
 const PLOT_EMPTY := "empty"
 const PLOT_SAPLING := "sapling"
 const PLOT_GROWING := "growing"
+# Dorosla roslinka czeka, az gracz zbierze nagrody.
+const PLOT_READY := "ready"
 
 # Tryb nieskonczony daje rubin (jeden raz), gdy gracz pokona w jednej grze
 # co najmniej tylu wrogow ("umowiona ilosc punktow" z notatek 2026-10-06).
@@ -84,6 +115,15 @@ var plant_coins := 0
 # Otwarte skrzynie: numery poziomow, przed ktorymi stoja na sciezce.
 var opened_chests: Array = []
 var fertilizer_limit := FERTILIZER_START_LIMIT
+# Ulepszenia roslin: String(indeks rosliny) -> poziom.
+var plant_upgrades: Dictionary = {}
+# Dzien (Unix), w ktorym gracz ostatnio wzial rubiny z oferty "za reklame".
+var ad_offer_day := 0
+# Roslinne trojki: ruchy, punkty przy roslinach (String(indeks) -> 0-7) i
+# plansza (indeksy roslin wierszami; pusta = do wylosowania).
+var match_moves := 0
+var match_points: Dictionary = {}
+var match_board: Array = []
 
 # Ogrod: sadzonki, pola {"state", "end" (czas Unix konca wzrostu)} i czas
 # powrotu pszczolki (0 = jeszcze nie ustalony).
@@ -108,6 +148,13 @@ var shared_my_harvests := 0
 var shared_friend_harvests := 0
 var shared_goal_paid := false
 var shared_gift_day := 0
+# Kupione w sklepie na zapas w biezacym wydarzeniu: pomoc na etap, wymiany roslin
+# i dodatkowe sadzonki dla znajomego. Znikaja razem z wydarzeniem.
+var event_help_prepaid := false
+var event_swap_credits := 0
+var shared_gift_credits := 0
+# Kod testowy: zapisane postepy wydarzen, id wydarzenia -> postepy.
+var event_saved_progress: Dictionary = {}
 
 # Rosliny, w ktorych kolko na sciezce gracz juz "wszedl" (indeksy w PlantData.TYPES).
 # Rosliny z unlock_level 1 sa dostepne od startu i nie trzeba ich odbierac.
@@ -127,6 +174,10 @@ var profiles: Array = []
 var next_profile_id := 1
 # Wybrane konto ("" = jeszcze zadnego nie wybrano - wtedy nic nie zapisujemy).
 var current_profile_id := ""
+# Kod testowy: nieudane proby i koniec blokady (czas Unix). Sa wspolne dla
+# wszystkich kont, zeby zmiana konta nie omijala blokady.
+var test_code_failures := 0
+var test_code_locked_until := 0
 
 # Nazwa i ikona wybranego konta (plakietka w prawym dolnym rogu sciezki).
 var player_name := DEFAULT_PLAYER_NAME
@@ -151,6 +202,11 @@ func _reset_progress() -> void:
 	plant_coins = 0
 	opened_chests = []
 	fertilizer_limit = FERTILIZER_START_LIMIT
+	plant_upgrades = {}
+	ad_offer_day = 0
+	match_moves = 0
+	match_points = {}
+	match_board = []
 	saplings = 0
 	garden_plots = []
 	for i in range(GARDEN_PLOTS):
@@ -160,6 +216,7 @@ func _reset_progress() -> void:
 	event_started = 0
 	event_level = {}
 	event_help_active = false
+	event_saved_progress = {}
 	_reset_event_progress()
 	claimed_plants = []
 	unlocked_icons = []
@@ -177,6 +234,8 @@ func load_profiles() -> void:
 	var parsed = JSON.parse_string(FileAccess.get_file_as_string(PROFILES_PATH))
 	if not (parsed is Dictionary):
 		return
+	test_code_failures = _loaded_int(parsed, "test_code_failures")
+	test_code_locked_until = _loaded_int(parsed, "test_code_locked_until")
 	var raw_next = parsed.get("next_id", 1)
 	if typeof(raw_next) == TYPE_FLOAT or typeof(raw_next) == TYPE_INT:
 		next_profile_id = max(1, int(raw_next))
@@ -197,7 +256,12 @@ func load_profiles() -> void:
 func save_profiles() -> void:
 	var file := FileAccess.open(PROFILES_PATH, FileAccess.WRITE)
 	if file:
-		file.store_string(JSON.stringify({"next_id": next_profile_id, "profiles": profiles}))
+		file.store_string(JSON.stringify({
+			"next_id": next_profile_id,
+			"profiles": profiles,
+			"test_code_failures": test_code_failures,
+			"test_code_locked_until": test_code_locked_until,
+		}))
 		file.close()
 
 # Zapis sprzed kont przenosimy do pierwszego konta (z domyslna nazwa, ktora
@@ -312,6 +376,84 @@ func _reset_event_progress() -> void:
 	shared_friend_harvests = 0
 	shared_goal_paid = false
 	shared_gift_day = 0
+	event_help_prepaid = false
+	event_swap_credits = 0
+	shared_gift_credits = 0
+
+# --- Kod testowy: zmiana wydarzenia ---
+func is_test_code(code: String) -> bool:
+	return code.strip_edges().sha256_text() == TEST_CODE_SHA256
+
+# Ile sekund zostalo do konca blokady. Cofniety zegar nie wydluza jej ponad 10 minut.
+func test_code_lock_seconds_left() -> int:
+	return clampi(test_code_locked_until - _now(), 0, TEST_CODE_LOCK_SECONDS)
+
+# Sprawdza kod wpisany przez gracza. Trzecia zla proba z rzedu blokuje kod na
+# 10 minut, a podczas blokady zaden kod nie dziala.
+func try_test_code(code: String) -> bool:
+	if test_code_lock_seconds_left() > 0:
+		return false
+	if is_test_code(code):
+		test_code_failures = 0
+		save_profiles()
+		return true
+	test_code_failures += 1
+	if test_code_failures >= TEST_CODE_MAX_FAILURES:
+		test_code_failures = 0
+		test_code_locked_until = _now() + TEST_CODE_LOCK_SECONDS
+	save_profiles()
+	return false
+
+# Przechodzi na wybrane wydarzenie, ktore startuje z pelnym tygodniem. Postepy
+# obecnego mozna zachowac na powrot do niego; bez zachowania przepadaja.
+func switch_event(event_idx: int, keep_progress: bool) -> void:
+	var current := current_event()
+	if not current.is_empty():
+		if keep_progress:
+			event_saved_progress[current["id"]] = _event_progress()
+		else:
+			event_saved_progress.erase(current["id"])
+	event_index = event_idx
+	event_started = _now()
+	_reset_event_progress()
+	var event_id: String = EventData.ROTATION[event_idx]["id"]
+	if event_saved_progress.has(event_id):
+		_restore_event_progress(event_saved_progress[event_id])
+		event_saved_progress.erase(event_id)
+	save_progress()
+
+func _event_progress() -> Dictionary:
+	return {
+		"completed_stages": event_completed_stages,
+		"stars": event_stars,
+		"hunt_coins": event_hunt_coins,
+		"hunt_thresholds": event_hunt_thresholds,
+		"shared_choice": shared_choice,
+		"shared_my_harvests": shared_my_harvests,
+		"shared_friend_harvests": shared_friend_harvests,
+		"shared_goal_paid": shared_goal_paid,
+		"shared_gift_day": shared_gift_day,
+		"help_prepaid": event_help_prepaid,
+		"swap_credits": event_swap_credits,
+		"gift_credits": shared_gift_credits,
+	}
+
+func _restore_event_progress(saved: Dictionary) -> void:
+	event_help_prepaid = bool(saved.get("help_prepaid", false))
+	event_swap_credits = _loaded_int(saved, "swap_credits")
+	shared_gift_credits = _loaded_int(saved, "gift_credits")
+	for stage in saved.get("completed_stages", []):
+		event_completed_stages.append(int(stage))
+	var stars: Dictionary = saved.get("stars", {})
+	for key in stars.keys():
+		event_stars[str(key)] = int(stars[key])
+	event_hunt_coins = _loaded_int(saved, "hunt_coins")
+	event_hunt_thresholds = _loaded_int(saved, "hunt_thresholds")
+	shared_choice = str(saved.get("shared_choice", ""))
+	shared_my_harvests = _loaded_int(saved, "shared_my_harvests")
+	shared_friend_harvests = _loaded_int(saved, "shared_friend_harvests")
+	shared_goal_paid = bool(saved.get("shared_goal_paid", false))
+	shared_gift_day = _loaded_int(saved, "shared_gift_day")
 
 func is_event_stage_open(stage: int) -> bool:
 	# Lowy: mozna grac dowolny etap, bo liczy sie suma monet.
@@ -319,15 +461,20 @@ func is_event_stage_open(stage: int) -> bool:
 		return true
 	return stage == 0 or event_completed_stages.has(stage - 1)
 
-# Przygotowuje etap. Pomoc pobiera roslimonety; bez nich etap nie startuje.
+# Przygotowuje etap. Pomoc pobiera roslimonety; bez nich etap nie startuje. Nie
+# startuje tez, gdy wydarzenie wlasnie sie skonczylo (zwraca false).
 func start_event_game(stage: int, with_help := false) -> bool:
+	var event_before := current_event()
+	refresh_event()
 	var event := current_event()
+	if event.is_empty() or event["id"] != event_before.get("id"):
+		return false
 	if with_help:
-		var cost: int = event["help"]["cost"]
-		if plant_coins < cost:
+		if event_help_prepaid:
+			event_help_prepaid = false
+			save_progress()
+		elif not spend_coins(event["help"]["cost"]):
 			return false
-		plant_coins -= cost
-		save_progress()
 	event_help_active = with_help
 	event_stage = stage
 	current_level_index = EventData.STAGES[stage]["level_idx"]
@@ -407,6 +554,129 @@ func spend_coins(amount: int) -> bool:
 	save_progress()
 	return true
 
+# --- Zakupy w sklepie ---
+func is_ad_offer_ready() -> bool:
+	return ad_offer_day != _today()
+
+func claim_ad_offer() -> bool:
+	if not is_ad_offer_ready():
+		return false
+	ad_offer_day = _today()
+	rubies += AD_OFFER_RUBIES
+	save_progress()
+	return true
+
+# Pomoc na nastepny etap biezacego wydarzenia, kupiona na zapas.
+func buy_event_help() -> bool:
+	var event := current_event()
+	if not event.has("help") or event_help_prepaid or not spend_coins(event["help"]["cost"]):
+		return false
+	event_help_prepaid = true
+	save_progress()
+	return true
+
+func buy_swap_credit() -> bool:
+	var event := current_event()
+	if not event.get("belt_preview", false) or not spend_coins(event["preview_swap_cost"]):
+		return false
+	event_swap_credits += 1
+	save_progress()
+	return true
+
+func use_swap_credit() -> bool:
+	if event_swap_credits <= 0:
+		return false
+	event_swap_credits -= 1
+	save_progress()
+	return true
+
+func buy_gift_credit() -> bool:
+	if not is_shared_garden_on() or not spend_coins(EventData.GIFT_COST):
+		return false
+	shared_gift_credits += 1
+	save_progress()
+	return true
+
+# Pole, na ktorym roslinka urosnie najszybciej (-1, gdy nic nie rosnie).
+func soonest_growing_plot() -> int:
+	var best := -1
+	for i in range(garden_plots.size()):
+		if garden_plots[i]["state"] == PLOT_GROWING:
+			if best < 0 or plot_seconds_left(i) < plot_seconds_left(best):
+				best = i
+	return best
+
+# --- Ulepszenia roslin ---
+func plant_upgrade_level(plant_idx: int) -> int:
+	return plant_upgrades.get(str(plant_idx), 0)
+
+# Mnoznik sily rosliny (1.0 bez ulepszen).
+func plant_power(plant_idx: int) -> float:
+	return 1.0 + plant_upgrade_level(plant_idx) * PLANT_UPGRADE_STEP
+
+func max_plant_power() -> float:
+	return 1.0 + PLANT_UPGRADE_MAX_LEVEL * PLANT_UPGRADE_STEP
+
+# Cena kolejnego poziomu; -1, gdy roslina jest juz w pelni ulepszona.
+func plant_upgrade_price(plant_idx: int) -> int:
+	var level := plant_upgrade_level(plant_idx)
+	if level >= PLANT_UPGRADE_MAX_LEVEL:
+		return -1
+	return PLANT_UPGRADE_BASE_PRICE + level * PLANT_UPGRADE_PRICE_STEP
+
+func buy_plant_upgrade(plant_idx: int) -> bool:
+	var price := plant_upgrade_price(plant_idx)
+	if price < 0 or rubies < price:
+		return false
+	rubies -= price
+	plant_upgrades[str(plant_idx)] = plant_upgrade_level(plant_idx) + 1
+	save_progress()
+	return true
+
+# --- Roslinne trojki ---
+# Punkty za jedna grupe: 3-4 roslinki to 1 punkt, 5-6 to 2, 7-8 to 3 itd.
+static func match_group_points(group_size: int) -> int:
+	return 1 + int((group_size - 3) / 2.0)
+
+func match_points_of(plant_idx: int) -> int:
+	return match_points.get(str(plant_idx), 0)
+
+func use_match_move() -> bool:
+	if match_moves <= 0:
+		return false
+	match_moves -= 1
+	save_progress()
+	return true
+
+# Dopisuje punkty roslinie; kazde 8 punktow to darmowe ulepszenie. W pelni
+# ulepszona roslina nie zbiera juz punktow. Zwraca liczbe nowych ulepszen.
+func add_match_points(plant_idx: int, points: int) -> int:
+	var total := match_points_of(plant_idx) + points
+	var gained := 0
+	while total >= MATCH_POINTS_PER_UPGRADE and plant_upgrade_level(plant_idx) < PLANT_UPGRADE_MAX_LEVEL:
+		total -= MATCH_POINTS_PER_UPGRADE
+		plant_upgrades[str(plant_idx)] = plant_upgrade_level(plant_idx) + 1
+		gained += 1
+	if plant_upgrade_level(plant_idx) >= PLANT_UPGRADE_MAX_LEVEL:
+		total = 0
+	match_points[str(plant_idx)] = total
+	save_progress()
+	return gained
+
+func save_match_board(board: Array) -> void:
+	match_board = board.duplicate()
+	save_progress()
+
+# --- Siodme miejsce w talii ---
+# Placi za jedna gre na sciezce; zwraca false, gdy brakuje rubinow. Talia z 7
+# roslinami w current_loadout oznacza, ze miejsce jest oplacone na te gre.
+func rent_extra_slot() -> bool:
+	if rubies < RENT_SLOT_RUBIES:
+		return false
+	rubies -= RENT_SLOT_RUBIES
+	save_progress()
+	return true
+
 # --- Sadzenie razem (opcja w tygodniu Low) ---
 func is_shared_garden_offered() -> bool:
 	return current_event().get("shared_garden", false)
@@ -428,6 +698,10 @@ func is_free_gift_ready() -> bool:
 func pay_for_gift() -> bool:
 	if is_free_gift_ready():
 		shared_gift_day = _today()
+		save_progress()
+		return true
+	if shared_gift_credits > 0:
+		shared_gift_credits -= 1
 		save_progress()
 		return true
 	return spend_coins(EventData.GIFT_COST)
@@ -495,19 +769,29 @@ func use_bee(i: int) -> void:
 	garden_plots[i]["end"] = int(garden_plots[i]["end"]) - GARDEN_BEE_SECONDS
 	_schedule_bee()
 
-# Dorosle roslinki daja roslimonety i znikaja. Zwraca numery tych pol.
-func harvest_ready_plots() -> Array:
-	var harvested := []
+# Roslinki, ktore skonczyly rosnac, czekaja na zebranie nagrod. Zwraca numery
+# pol, ktore wlasnie staly sie gotowe.
+func mark_ready_plots() -> Array:
+	var newly_ready := []
 	for i in range(garden_plots.size()):
 		if garden_plots[i]["state"] == PLOT_GROWING and plot_seconds_left(i) == 0:
-			garden_plots[i] = {"state": PLOT_EMPTY, "end": 0}
-			plant_coins += GARDEN_HARVEST_COINS
-			if is_shared_garden_on():
-				shared_my_harvests += 1
-			harvested.append(i)
-	if not harvested.is_empty():
+			garden_plots[i]["state"] = PLOT_READY
+			newly_ready.append(i)
+	if not newly_ready.is_empty():
 		save_progress()
-	return harvested
+	return newly_ready
+
+# Zebranie nagrod z doroslej roslinki: roslimonety i ruch, a pole sie zwalnia.
+func collect_plot(i: int) -> bool:
+	if garden_plots[i]["state"] != PLOT_READY:
+		return false
+	garden_plots[i] = {"state": PLOT_EMPTY, "end": 0}
+	plant_coins += GARDEN_HARVEST_COINS
+	match_moves += GARDEN_HARVEST_MOVES
+	if is_shared_garden_on():
+		shared_my_harvests += 1
+	save_progress()
+	return true
 
 # Poziom jest otwarty, gdy poprzedni zostal ukonczony i gracz odebral
 # wszystkie rosliny, ktorych kolka stoja na sciezce tuz przed nim.
@@ -569,14 +853,16 @@ func chest_levels() -> Array:
 func is_chest_claimable(chest_level: int) -> bool:
 	return is_level_completed(chest_level - 2) and not opened_chests.has(chest_level)
 
-# Losuje i od razu zapisuje nagrode. Zwraca {"rubies", "coins"}.
+# Losuje i od razu zapisuje nagrode. Zwraca {"rubies", "coins", "moves"}.
 func open_chest(chest_level: int) -> Dictionary:
 	if not is_chest_claimable(chest_level):
 		return {}
-	var reward := {"rubies": _weighted_pick(CHEST_RUBY_WEIGHTS), "coins": _weighted_pick(CHEST_COIN_WEIGHTS)}
+	var reward := {"rubies": _weighted_pick(CHEST_RUBY_WEIGHTS), "coins": _weighted_pick(CHEST_COIN_WEIGHTS),
+		"moves": _weighted_pick(CHEST_MOVE_WEIGHTS)}
 	opened_chests.append(chest_level)
 	rubies += reward["rubies"]
 	plant_coins += reward["coins"]
+	match_moves += reward["moves"]
 	save_progress()
 	return reward
 
@@ -732,6 +1018,14 @@ func save_progress() -> void:
 		"plant_coins": plant_coins,
 		"opened_chests": opened_chests,
 		"fertilizer_limit": fertilizer_limit,
+		"plant_upgrades": plant_upgrades,
+		"ad_offer_day": ad_offer_day,
+		"match_moves": match_moves,
+		"match_points": match_points,
+		"match_board": match_board,
+		"event_help_prepaid": event_help_prepaid,
+		"event_swap_credits": event_swap_credits,
+		"shared_gift_credits": shared_gift_credits,
 		"saplings": saplings,
 		"garden_plots": garden_plots,
 		"next_bee_time": next_bee_time,
@@ -746,6 +1040,7 @@ func save_progress() -> void:
 		"shared_friend_harvests": shared_friend_harvests,
 		"shared_goal_paid": shared_goal_paid,
 		"shared_gift_day": shared_gift_day,
+		"event_saved_progress": event_saved_progress,
 		"unlocked_icons": unlocked_icons,
 		"icon_unlock_steps": icon_unlock_steps,
 	}
@@ -845,6 +1140,35 @@ func _load_v3_fields(parsed: Dictionary) -> void:
 	shared_gift_day = _loaded_int(parsed, "shared_gift_day")
 	shared_goal_paid = bool(parsed.get("shared_goal_paid", false))
 	shared_choice = str(parsed.get("shared_choice", ""))
+	ad_offer_day = _loaded_int(parsed, "ad_offer_day")
+	match_moves = _loaded_int(parsed, "match_moves")
+	var loaded_points = parsed.get("match_points", {})
+	if loaded_points is Dictionary:
+		for key in loaded_points.keys():
+			var points = loaded_points[key]
+			if typeof(points) == TYPE_FLOAT or typeof(points) == TYPE_INT:
+				match_points[str(key)] = clampi(int(points), 0, MATCH_POINTS_PER_UPGRADE - 1)
+	var loaded_board = parsed.get("match_board", [])
+	if loaded_board is Array and loaded_board.size() == MATCH_COLS * MATCH_ROWS:
+		for v in loaded_board:
+			if (typeof(v) != TYPE_FLOAT and typeof(v) != TYPE_INT) or int(v) < 0 or int(v) >= PlantData.TYPES.size():
+				match_board = []
+				break
+			match_board.append(int(v))
+	event_help_prepaid = bool(parsed.get("event_help_prepaid", false))
+	event_swap_credits = _loaded_int(parsed, "event_swap_credits")
+	shared_gift_credits = _loaded_int(parsed, "shared_gift_credits")
+	var loaded_upgrades = parsed.get("plant_upgrades", {})
+	if loaded_upgrades is Dictionary:
+		for key in loaded_upgrades.keys():
+			var level = loaded_upgrades[key]
+			if typeof(level) == TYPE_FLOAT or typeof(level) == TYPE_INT:
+				plant_upgrades[str(key)] = clampi(int(level), 0, PLANT_UPGRADE_MAX_LEVEL)
+	var loaded_saved = parsed.get("event_saved_progress", {})
+	if loaded_saved is Dictionary:
+		for key in loaded_saved.keys():
+			if loaded_saved[key] is Dictionary:
+				event_saved_progress[str(key)] = loaded_saved[key]
 	var loaded_stars = parsed.get("event_stars", {})
 	if loaded_stars is Dictionary:
 		for key in loaded_stars.keys():
@@ -859,7 +1183,7 @@ func _load_v3_fields(parsed: Dictionary) -> void:
 	if loaded_plots is Array:
 		for i in range(min(loaded_plots.size(), GARDEN_PLOTS)):
 			var plot = loaded_plots[i]
-			if plot is Dictionary and [PLOT_EMPTY, PLOT_SAPLING, PLOT_GROWING].has(plot.get("state")):
+			if plot is Dictionary and [PLOT_EMPTY, PLOT_SAPLING, PLOT_GROWING, PLOT_READY].has(plot.get("state")):
 				garden_plots[i] = {"state": plot["state"], "end": int(plot.get("end", 0))}
 
 	var loaded_chests = parsed.get("opened_chests", [])

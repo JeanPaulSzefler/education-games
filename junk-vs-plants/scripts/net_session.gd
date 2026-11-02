@@ -16,7 +16,7 @@ extends Node
 const DISCOVERY_PORT := 47810
 const GAME_PORT := 47811
 # Podnosic przy kazdej zmianie protokolu - rozne wersje gry sie nie widza.
-const PROTOCOL_VERSION := 4
+const PROTOCOL_VERSION := 5
 # Po co sie laczymy: gra na planszy albo sadzenie razem (bez planszy).
 const MODE_GAME := "game"
 const MODE_GARDEN := "garden"

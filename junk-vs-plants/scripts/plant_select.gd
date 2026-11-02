@@ -18,12 +18,16 @@ var selected: Array = []
 var banned_roles: Array = []
 var forced_plants: Array = []
 var max_plants := GameState.MAX_LOADOUT
+# Siodme miejsce wypozyczone na te gre (tylko na sciezce); rubiny pobiera "Graj!".
+var rent_slot := false
 # plant_idx -> {"border_sb": StyleBoxFlat, "mark": Panel albo null}
 var card_refs: Dictionary = {}
 
 var counter_label: Label
 var message_label: Label
+var subtitle: Label
 var play_button: Button
+var rent_button: Button
 
 func _ready() -> void:
 	var level: Dictionary = GameState.current_level()
@@ -41,8 +45,8 @@ func _ready() -> void:
 	title.add_theme_font_size_override("font_size", 30)
 	add_child(title)
 
-	var subtitle := Label.new()
-	subtitle.text = "Wybierz rosliny do tej gry (najwyzej 6)"
+	subtitle = Label.new()
+	subtitle.text = "Wybierz rosliny do tej gry (najwyzej %d)" % GameState.MAX_LOADOUT
 	subtitle.position = Vector2(40, 58)
 	subtitle.add_theme_font_size_override("font_size", 18)
 	add_child(subtitle)
@@ -93,7 +97,8 @@ func _ready() -> void:
 		if loadout.is_empty():
 			var unlocked := GameState.unlocked_plant_indices()
 			loadout = unlocked.slice(0, min(GameState.MAX_LOADOUT, unlocked.size()))
-		selected = loadout.filter(_is_plant_allowed)
+		# Talia z wypozyczonym miejscem wraca do 6 roslin - miejsce bylo na jedna gre.
+		selected = loadout.filter(_is_plant_allowed).slice(0, max_plants)
 
 	_build_grid()
 	_update_counter()
@@ -112,10 +117,56 @@ func _ready() -> void:
 	play_button.pressed.connect(_on_play_pressed)
 	add_child(play_button)
 	play_button.disabled = selected.is_empty()
+	_build_rent_button()
 
 	if NetSession.active:
 		NetSession.game_starting.connect(_start_game)
 		NetSession.session_lost.connect(_on_back_pressed)
+
+# Siodme miejsce za rubiny: tylko na sciezce i tylko, gdy gracz ma wiecej roslin,
+# niz miesci sie w zwyklej talii.
+func _build_rent_button() -> void:
+	if GameState.is_event_game() or NetSession.active:
+		return
+	if GameState.unlocked_plant_indices().size() <= GameState.MAX_LOADOUT:
+		return
+	rent_button = Button.new()
+	rent_button.position = Vector2(400, 640)
+	rent_button.size = Vector2(480, 60)
+	rent_button.focus_mode = Control.FOCUS_NONE
+	rent_button.add_theme_font_size_override("font_size", 20)
+	rent_button.pressed.connect(_on_rent_pressed)
+	add_child(rent_button)
+	var key := UiIcons.rent_slot(44)
+	key.position = Vector2(10, 8)
+	rent_button.add_child(key)
+	var ruby := UiIcons.ruby(36)
+	ruby.position = Vector2(rent_button.size.x - 46, 12)
+	rent_button.add_child(ruby)
+	_update_rent_button()
+
+func _update_rent_button() -> void:
+	if rent_button == null:
+		return
+	if rent_slot:
+		rent_button.text = "Oddaj 7. miejsce (nie placisz)"
+	else:
+		rent_button.text = "7. miejsce na te gre za %d" % GameState.RENT_SLOT_RUBIES
+	rent_button.disabled = not rent_slot and GameState.rubies < GameState.RENT_SLOT_RUBIES
+
+func _on_rent_pressed() -> void:
+	rent_slot = not rent_slot
+	max_plants = GameState.MAX_LOADOUT + (1 if rent_slot else 0)
+	subtitle.text = "Wybierz rosliny do tej gry (najwyzej %d)" % max_plants
+	if rent_slot:
+		message_label.text = "Rubiny zaplacisz dopiero, gdy zaczniesz gre z 7 roslinami."
+	else:
+		message_label.text = ""
+		while selected.size() > max_plants:
+			var removed: int = selected.pop_back()
+			_update_card_visual(removed)
+	_update_rent_button()
+	_update_counter()
 
 func _build_grid() -> void:
 	card_refs.clear()
@@ -228,8 +279,10 @@ func _is_plant_allowed(plant_idx: int) -> bool:
 		return true
 	if banned_roles.has(PlantData.TYPES[plant_idx]["role"]):
 		return false
-	if not forced_plants.is_empty() and not GameState.event_help_active:
-		return false
+	# Narzucona talia: czwarta roslina moze byc dowolna, takze nieodblokowana,
+	# zeby nowy gracz nie zaplacil za pomoc, ktorej nie ma jak uzyc.
+	if not forced_plants.is_empty():
+		return GameState.event_help_active
 	return GameState.is_plant_unlocked(plant_idx)
 
 func _on_card_pressed(plant_idx: int) -> void:
@@ -265,6 +318,9 @@ func _on_back_pressed() -> void:
 
 func _on_play_pressed() -> void:
 	if selected.is_empty():
+		return
+	if selected.size() > GameState.MAX_LOADOUT and not GameState.rent_extra_slot():
+		message_label.text = "Brakuje rubinow na 7. miejsce."
 		return
 	var ordered := []
 	for i in range(PlantData.TYPES.size()):
