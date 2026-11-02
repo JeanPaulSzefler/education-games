@@ -25,8 +25,11 @@ const POPUP_TEXT_COLOR := Color(0.15, 0.12, 0.1)
 const GROWN_PLANT_IDX := 3
 const GROWN_TINT := Color(0.85, 0.7, 1.0)
 const GROWN_SIZE := 130.0
-# Sadzonka zaczyna od rozmiaru z pola przed podlaniem (90 z 130).
-const SAPLING_SCALE := 0.7
+# Wysokosc roslinki z ziemia: od sadzonki sprzed podlania do doroslej (GROWN_SIZE).
+const SAPLING_HEIGHT := 72.0
+# Jaka czesc wysokosci obrazka zajmuje roslinka z ziemia na etapach 1 i 2
+# (kwadratowe obrazki z ziemia przy dolnej krawedzi, GRAFIKI_PROMPTY_6.md).
+const GARDEN_STAGE_FILLS := [0.6, 0.85]
 const GLOW_SIZE := 180.0
 const REWARD_ICON_SIZE := 36.0
 const BEE_SIZE := 80.0
@@ -47,7 +50,8 @@ var ruby_label: Label
 var moves_label: Label
 # Etykiety licznikow: indeks pola -> Label.
 var timer_labels := {}
-# Etapy wzrostu na rosnacych polach: indeks pola -> Array rysunkow.
+# Etapy wzrostu na rosnacych polach: indeks pola -> Array
+# {"node", "fill" (czesc wysokosci obrazka z roslinka), "gap" (pusty pasek pod nia)}.
 var growth_views := {}
 var bee: Button
 var bee_tween: Tween
@@ -265,21 +269,36 @@ func _build_plots() -> void:
 # az do doroslej roslinki, i przy tym rosnie. Bez grafik etapow sadzonka
 # przenika sie wprost z dorosla roslinka.
 func _build_growth(btn: Button, i: int) -> void:
-	var stages := [UiIcons.sapling(GROWN_SIZE)]
-	for path in UiIcons.garden_stage_paths():
-		stages.append(UiIcons.texture_from(path, GROWN_SIZE))
-	stages.append(UiIcons.plant_icon_tinted(GROWN_PLANT_IDX, GROWN_SIZE, GROWN_TINT))
+	var stages := [_growth_layer(UiIcons.sapling(GROWN_SIZE))]
+	for k in range(UiIcons.GARDEN_STAGE_TEXTURES.size()):
+		var path: String = UiIcons.GARDEN_STAGE_TEXTURES[k]
+		if ResourceLoader.exists(path):
+			stages.append({"node": UiIcons.texture_from(path, GROWN_SIZE), "fill": GARDEN_STAGE_FILLS[k], "gap": 0.0})
+	stages.append(_growth_layer(UiIcons.plant_icon_tinted(GROWN_PLANT_IDX, GROWN_SIZE, GROWN_TINT)))
 	for stage in stages:
-		stage.position = Vector2((PLOT_SIZE.x - GROWN_SIZE) / 2.0, PLOT_SIZE.y - GROWN_SIZE - 34)
+		var node: Control = stage["node"]
 		# Roslinka rosnie od ziemi w gore.
-		stage.pivot_offset = Vector2(GROWN_SIZE / 2.0, GROWN_SIZE)
-		btn.add_child(stage)
+		node.pivot_offset = Vector2(GROWN_SIZE / 2.0, GROWN_SIZE)
+		btn.add_child(node)
 	growth_views[i] = stages
 	_update_growth(i)
 
+# Obrazek przyciety do tresci wypelnia kwadrat na szerokosc albo wysokosc. Szeroki
+# (np. sadzonka) stoi na srodku kwadratu, wiec pod roslinka zostaje pusty pasek.
+func _growth_layer(node: Control) -> Dictionary:
+	if node is TextureRect and node.texture != null:
+		var tex_size: Vector2 = node.texture.get_size()
+		if tex_size.x > tex_size.y:
+			var fill := tex_size.y / tex_size.x
+			return {"node": node, "fill": fill, "gap": (1.0 - fill) / 2.0}
+	return {"node": node, "fill": 1.0, "gap": 0.0}
+
+# Wszystkie etapy maja te sama, rosnaca wysokosc roslinki z ziemia, a ziemia stoi
+# w tym samym miejscu, wiec przenikanie etapow nie skacze.
 func _update_growth(i: int) -> void:
 	var stages: Array = growth_views[i]
 	var growth := GameState.plot_growth(i)
+	var height := lerpf(SAPLING_HEIGHT, GROWN_SIZE, growth)
 	var progress := growth * (stages.size() - 1)
 	var current := mini(int(progress), stages.size() - 2)
 	var blend := progress - current
@@ -289,8 +308,12 @@ func _update_growth(i: int) -> void:
 			alpha = 1.0 - blend
 		elif s == current + 1:
 			alpha = blend
-		stages[s].modulate.a = alpha
-		stages[s].scale = Vector2.ONE * lerpf(SAPLING_SCALE, 1.0, growth)
+		var node: Control = stages[s]["node"]
+		var scale_factor: float = height / (GROWN_SIZE * stages[s]["fill"])
+		node.modulate.a = alpha
+		node.scale = Vector2.ONE * scale_factor
+		node.position = Vector2((PLOT_SIZE.x - GROWN_SIZE) / 2.0,
+			PLOT_SIZE.y - GROWN_SIZE - 34 + stages[s]["gap"] * GROWN_SIZE * scale_factor)
 
 # Gotowa roslinka: teczowa poswiata i nagrody, ktore gracz zbiera tapnieciem.
 func _build_ready_plant(btn: Button) -> void:

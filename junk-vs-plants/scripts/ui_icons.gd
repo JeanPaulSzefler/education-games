@@ -392,10 +392,6 @@ static func rainbow_glow(size: Vector2) -> ColorRect:
 	glow.material = material
 	return glow
 
-# Etapy wzrostu w ogrodzie, ktore juz sa w grze (sciezki plikow).
-static func garden_stage_paths() -> Array:
-	return GARDEN_STAGE_TEXTURES.filter(func(path): return ResourceLoader.exists(path))
-
 static func texture_from(path: String, size: float) -> TextureRect:
 	return _texture_icon(path, size)
 

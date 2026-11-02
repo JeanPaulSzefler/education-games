@@ -30,7 +30,7 @@ const SELECT_COLOR := Color(0.98, 0.85, 0.2)
 const POINTS_BAR_COLOR := Color(0.98, 0.75, 0.15)
 const BTN_COLOR := Color(0.3, 0.45, 0.25)
 const NO_MOVES_COLOR := Color(1.0, 0.4, 0.35)
-const HINT_TEXT := "Zamien dwie sasiednie roslinki, zeby co najmniej 3 takie same staly w rzedzie. 8 punktow = ulepszenie."
+const HINT_TEXT := "Zamien sasiednie roslinki, zeby ulozyc 3 takie same w rzedzie. 8 punktow = ulepszenie."
 
 var cols: int = GameState.MATCH_COLS
 var rows: int = GameState.MATCH_ROWS
@@ -58,7 +58,11 @@ func _ready() -> void:
 	add_child(bg)
 
 	add_child(_label("Roslinne trojki", 40, Vector2(0, 10), VIEWPORT_WIDTH))
-	message_label = _label(HINT_TEXT, 18, Vector2(BOARD_POS.x, 80), cols * CELL)
+	message_label = _label(HINT_TEXT, 17, Vector2(BOARD_POS.x, 72), cols * CELL)
+	# Dluzsze komunikaty lamia sie na dwie linijki nad plansza.
+	message_label.size.y = BOARD_POS.y - 74
+	message_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	message_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	add_child(message_label)
 
 	var back_btn := Button.new()
