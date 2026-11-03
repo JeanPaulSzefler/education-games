@@ -1,4 +1,6 @@
-# Zadanie dla ChatGPT: grafiki do gry Junk vs Plants (część 7)
+# Zadanie 07: grafiki do gry Junk vs Plants (część 7)
+
+**Status: ZREALIZOWANE (2026-11-03, commity 908b01f, e9b6e4f, 2e8c56d)**
 
 ## Cel
 

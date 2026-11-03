@@ -6,7 +6,7 @@ Trzy partie grafik do nowości z 2026-11-03. Do czasu ich dodania gra rysuje pro
 - **Partia B — 16 grafik** do ustawień, dodatków, gier edukacyjnych, gry z innym graczem i przewodnika.
 - **Partia C — 39 ikonek śmieci** do Quizu ekologicznego i Sortowni.
 
-**Jak używać:** wklej do generatora wspólny styl i blok jednej partii. Jako wzoru stylu dołącz `assets/sprites/plants/cactus.png`. Generator ma zwracać po jednej grafice; pisz „następna”, aż dostaniesz wszystkie z partii. Szczegóły zapisu plików: `ZADANIE_GRAFIKI_CHATGPT.md`.
+**Jak używać:** wklej do generatora wspólny styl i blok jednej partii. Jako wzoru stylu dołącz `assets/sprites/plants/cactus.png`. Generator ma zwracać po jednej grafice; pisz „następna”, aż dostaniesz wszystkie z partii. Szczegóły zapisu plików: `zadania/ZADANIE_07_GRAFIKI.md`.
 
 ## Wspólny styl (wklej przed każdą partią)
 
