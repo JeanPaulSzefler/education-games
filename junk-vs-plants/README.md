@@ -116,3 +116,4 @@ Pliki `.apk` są śledzone przez Git, a `.gdignore` sprawia, że Godot pomija te
 ## Zapisane pomysły na później
 
 - Burza mózgów: nowe roślinki oraz nowe typy przeciwników
+- Gra z innym graczem (notatki 2026-11-03): mały podgląd ekranu drugiego gracza na dole ekranu, żeby było widać, co robi znajomy. Najwięcej da w rywalizacji, gdzie każdy ma własną planszę: telefon może co chwilę wysyłać uproszczony stan planszy (rośliny, wrogowie, woda), a drugi rysuje go jako zmniejszoną planszę, tak jak gość w grze zespołowej (`_apply_snapshot` w `scripts/main.gd`).
