@@ -29,7 +29,7 @@ func _ready() -> void:
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
 
-	var back_btn := _button("Wroc", BACK_COLOR, Vector2(40, 620), Vector2(220, 70))
+	var back_btn := _button(Lang.t("back"), BACK_COLOR, Vector2(40, 620), Vector2(220, 70))
 	back_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/LevelSelect.tscn"))
 	add_child(back_btn)
 
@@ -43,14 +43,13 @@ func _ready() -> void:
 
 	var event := GameState.current_event()
 	if event.is_empty():
-		add_child(_label("Wydarzenia", 44, Vector2(0, 40)))
-		add_child(_label("Nowe wydarzenie pojawi sie wkrotce.", 26, Vector2(0, 300)))
+		add_child(_label(Lang.t("weekly_event"), 44, Vector2(0, 40)))
+		add_child(_label(Lang.t("event_soon"), 26, Vector2(0, 300)))
 		return
 
-	add_child(_label(event["name"], 44, Vector2(0, 30)))
-	var description := _label(event["description"], 22, Vector2(120, 96))
-	description.size = Vector2(VIEWPORT_WIDTH - 240, 70)
-	description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	add_child(_label(Lang.t("event_" + event["id"]), 44, Vector2(0, 30)))
+	var description := _label(Lang.t("event_%s_desc" % event["id"]), 22, Vector2(120, 96))
+	UiIcons.wrap_label(description, Vector2(VIEWPORT_WIDTH - 240, 70))
 	add_child(description)
 	add_child(_label(_time_left_text(), 22, Vector2(0, 182)))
 	if event.get("coin_hunt", false):
@@ -79,15 +78,15 @@ func _button(text: String, color: Color, pos: Vector2, btn_size: Vector2) -> But
 
 func _time_left_text() -> String:
 	var left := GameState.event_seconds_left()
-	return "Do konca: %d dni %d godz. Potem wydarzenie znika razem z postepami." % [left / 86400, (left % 86400) / 3600]
+	return Lang.f("event_time_left", [left / 86400, (left % 86400) / 3600])
 
 func _hunt_progress_text() -> String:
 	var reached := GameState.event_hunt_thresholds
 	var thresholds: Array = EventData.HUNT_THRESHOLDS
 	if reached >= thresholds.size():
-		return "Monety z tygodnia: %d. Wszystkie progi zdobyte!" % GameState.event_hunt_coins
+		return Lang.f("hunt_all_done", [GameState.event_hunt_coins])
 	var next: Dictionary = thresholds[reached]
-	return "Monety z tygodnia: %d. Nastepny prog: %d monet, +%d sadzonek" % [GameState.event_hunt_coins, next["coins"], next["saplings"]]
+	return Lang.f("hunt_next", [GameState.event_hunt_coins, next["coins"], next["saplings"]])
 
 func _build_stages(event: Dictionary) -> void:
 	var count: int = EventData.STAGES.size()
@@ -130,6 +129,11 @@ func _add_card_reward(card: Button, event: Dictionary, stage: int, done: bool) -
 	var icon := UiIcons.sapling(44)
 	icon.position = Vector2(CARD_SIZE.x - 76, 136)
 	card.add_child(icon)
+	# Ruch za pierwsze przejscie niektorych etapow.
+	if not done and EventData.STAGES[stage].get("moves", 0) > 0:
+		var move := UiIcons.match_move(40)
+		move.position = Vector2(CARD_SIZE.x - 50, 96)
+		card.add_child(move)
 
 func event_stars(stage: int) -> int:
 	return GameState.event_stars.get(str(stage), 0)
@@ -157,17 +161,16 @@ func _on_stage_pressed(event: Dictionary, stage: int) -> void:
 	panel.add_theme_stylebox_override("panel", sb)
 	popup.add_child(panel)
 
-	var question := _label("Pomoc na ten etap: %s" % help["text"], 26, Vector2(20, 40))
-	question.size = Vector2(panel.size.x - 40, 90)
-	question.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	var question := _label(Lang.f("help_for_stage", [Lang.t("event_%s_help" % event["id"])]), 26, Vector2(20, 40))
+	UiIcons.wrap_label(question, Vector2(panel.size.x - 40, 90))
 	question.add_theme_color_override("font_color", POPUP_TEXT_COLOR)
 	panel.add_child(question)
 
-	var play_btn := _button("Zagraj bez pomocy", OK_BTN_COLOR, Vector2(30, 170), Vector2(300, 80))
+	var play_btn := _button(Lang.t("play_without_help"), OK_BTN_COLOR, Vector2(30, 170), Vector2(300, 80))
 	play_btn.pressed.connect(func(): _start_stage(event, stage, false))
 	panel.add_child(play_btn)
 
-	var help_text: String = "Uzyj kupionej pomocy" if GameState.event_help_prepaid else "Kup za %d i zagraj" % help["cost"]
+	var help_text: String = Lang.t("help_use_bought") if GameState.event_help_prepaid else Lang.f("help_buy", [help["cost"]])
 	var help_btn := _button(help_text, HELP_BTN_COLOR, Vector2(370, 170), Vector2(300, 80))
 	help_btn.disabled = not GameState.event_help_prepaid and GameState.plant_coins < help["cost"]
 	help_btn.pressed.connect(func(): _start_stage(event, stage, true))

@@ -22,13 +22,14 @@ extends RefCounted
 #   "shared_garden"     w tym tygodniu gracz moze wybrac sadzenie razem (ogrod)
 const DURATION_DAYS := 7
 const REPLAY_SAPLINGS := 1
-# Poziom sciezki (trudnosc) i sadzonki za pierwsze przejscie kazdego etapu.
+# Poziom sciezki (trudnosc) i sadzonki za pierwsze przejscie kazdego etapu; etapy
+# 3 i 5 daja tez ruch do Roslinnych trojek (notatki 2026-11-03).
 const STAGES := [
 	{"level_idx": 1, "saplings": 2},
 	{"level_idx": 5, "saplings": 2},
-	{"level_idx": 11, "saplings": 3},
+	{"level_idx": 11, "saplings": 3, "moves": 1},
 	{"level_idx": 20, "saplings": 3},
-	{"level_idx": 35, "saplings": 4},
+	{"level_idx": 35, "saplings": 4, "moves": 1},
 ]
 const BOSS_RUSH_HP_STEP := 0.25
 # Lowy na roslimonety: progi tygodniowej sumy monet i sadzonki za nie.

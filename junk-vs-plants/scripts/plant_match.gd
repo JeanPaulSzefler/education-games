@@ -30,7 +30,6 @@ const SELECT_COLOR := Color(0.98, 0.85, 0.2)
 const POINTS_BAR_COLOR := Color(0.98, 0.75, 0.15)
 const BTN_COLOR := Color(0.3, 0.45, 0.25)
 const NO_MOVES_COLOR := Color(1.0, 0.4, 0.35)
-const HINT_TEXT := "Zamien sasiednie roslinki, zeby ulozyc 3 takie same w rzedzie. 8 punktow = ulepszenie."
 
 var cols: int = GameState.MATCH_COLS
 var rows: int = GameState.MATCH_ROWS
@@ -57,16 +56,16 @@ func _ready() -> void:
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
 
-	add_child(_label("Roslinne trojki", 40, Vector2(0, 10), VIEWPORT_WIDTH))
-	message_label = _label(HINT_TEXT, 17, Vector2(BOARD_POS.x, 72), cols * CELL)
+	add_child(_label(Lang.t("plant_match"), 40, Vector2(0, 10), VIEWPORT_WIDTH))
+	message_label = _label(Lang.t("match_hint"), 17, Vector2(BOARD_POS.x, 72), cols * CELL)
 	# Dluzsze komunikaty lamia sie na dwie linijki nad plansza.
 	message_label.size.y = BOARD_POS.y - 74
-	message_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	UiIcons.wrap_label(message_label, Vector2(cols * CELL, message_label.size.y))
 	message_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	add_child(message_label)
 
 	var back_btn := Button.new()
-	back_btn.text = "Wroc"
+	back_btn.text = Lang.t("back")
 	back_btn.position = Vector2(20, 16)
 	back_btn.size = Vector2(160, 64)
 	back_btn.focus_mode = Control.FOCUS_NONE
@@ -82,8 +81,9 @@ func _ready() -> void:
 	moves_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	add_child(moves_label)
 
-	for p_idx in range(PlantData.TYPES.size()):
-		_build_counter(p_idx)
+	var order := PlantData.unlock_order()
+	for slot in range(order.size()):
+		_build_counter(order[slot], slot)
 	_build_board_area()
 
 	# Plansza zostaje miedzy wejsciami, zeby nie dalo sie losowac lepszej.
@@ -108,10 +108,10 @@ func _update_moves() -> void:
 	moves_label.text = "x %d" % GameState.match_moves
 
 # --- Liczniki po lewej: punkty (0-7) i poziom ulepszenia kazdej rosliny ---
-func _build_counter(plant_idx: int) -> void:
+func _build_counter(plant_idx: int, slot: int) -> void:
 	var panel := Panel.new()
-	var col := int(plant_idx / float(COUNTERS_PER_COLUMN))
-	var row := plant_idx % COUNTERS_PER_COLUMN
+	var col := int(slot / float(COUNTERS_PER_COLUMN))
+	var row := slot % COUNTERS_PER_COLUMN
 	panel.position = COUNTER_POS + Vector2(col * (COUNTER_SIZE.x + COUNTER_GAP.x), row * (COUNTER_SIZE.y + COUNTER_GAP.y))
 	panel.size = COUNTER_SIZE
 	panel.pivot_offset = COUNTER_SIZE / 2.0
@@ -128,13 +128,13 @@ func _refresh_counter(plant_idx: int, flash: bool) -> void:
 	var icon := UiIcons.plant_icon(plant_idx, 60)
 	icon.position = Vector2(6, 7)
 	panel.add_child(icon)
-	var name_label := _label(PlantData.TYPES[plant_idx]["name"], 14, Vector2(72, 0), COUNTER_SIZE.x - 78)
+	var name_label := _label(PlantData.name_of(plant_idx), 14, Vector2(72, 0), COUNTER_SIZE.x - 78)
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	panel.add_child(name_label)
 
 	var level := GameState.plant_upgrade_level(plant_idx)
 	if level >= GameState.PLANT_UPGRADE_MAX_LEVEL:
-		var max_label := _label("Pelne ulepszenie", 14, Vector2(72, 22), COUNTER_SIZE.x - 78)
+		var max_label := _label(Lang.t("match_full_upgrade"), 14, Vector2(72, 22), COUNTER_SIZE.x - 78)
 		max_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 		max_label.add_theme_color_override("font_color", POINTS_BAR_COLOR)
 		panel.add_child(max_label)
@@ -282,7 +282,7 @@ func _try_swap(a: int, b: int) -> void:
 		return
 	_select(-1)
 	if GameState.match_moves <= 0:
-		message_label.text = "Nie masz ruchow. Dostaniesz je za roslinki z ogrodu, a czasem w skrzyni."
+		message_label.text = Lang.t("match_no_moves")
 		var tw := moves_label.create_tween()
 		tw.tween_property(moves_label, "modulate", NO_MOVES_COLOR, 0.15)
 		tw.tween_property(moves_label, "modulate", Color(1, 1, 1), 0.4)
@@ -296,12 +296,12 @@ func _try_swap(a: int, b: int) -> void:
 		_swap_in(board, a, b)
 		_swap_in(nodes, a, b)
 		await _move_pieces([a, b], SWAP_TIME)
-		message_label.text = "Po tej zamianie nie ma 3 takich samych roslinek w rzedzie."
+		message_label.text = Lang.t("match_bad_swap")
 		busy = false
 		return
 	GameState.use_match_move()
 	_update_moves()
-	message_label.text = HINT_TEXT
+	message_label.text = Lang.t("match_hint")
 	await _resolve(groups)
 	busy = false
 
@@ -331,7 +331,7 @@ func _resolve(groups: Array) -> void:
 		GameState.save_match_board(board)
 		groups = _find_groups(board)
 	if not _has_valid_move(board):
-		message_label.text = "Nie ma juz zadnego ruchu - nowe roslinki!"
+		message_label.text = Lang.t("match_reshuffle")
 		board = _new_board()
 		GameState.save_match_board(board)
 		await _replace_all_pieces()
@@ -350,7 +350,7 @@ func _score_group(group: Array) -> void:
 	_float_text("+%d" % points, center)
 	_refresh_counter(plant_idx, true)
 	if gained > 0:
-		message_label.text = "%s dostaje ulepszenie!" % PlantData.TYPES[plant_idx]["name"]
+		message_label.text = Lang.f("match_upgraded", [PlantData.name_of(plant_idx)])
 
 func _float_text(text: String, center: Vector2) -> void:
 	var label := _label(text, 40, center - Vector2(60, 28), 120)
@@ -408,12 +408,25 @@ func _drop_and_fill() -> void:
 				nodes[i] = null
 				moved.append(target)
 			write_row -= 1
-		var new_count := write_row + 1
 		for r in range(write_row, -1, -1):
 			var i := r * cols + c
-			board[i] = randi() % PlantData.TYPES.size()
-			nodes[i] = _make_piece(board[i], _cell_pos(i) - Vector2(0, new_count * CELL))
-			moved.append(i)
+			board[i] = -2
+	# Nowe roslinki: bez gotowych trojek i tak, zeby wiele rodzajow mialo ruch.
+	var fresh := []
+	for i in range(board.size()):
+		if board[i] == -2:
+			var options := range(PlantData.TYPES.size()).filter(func(t):
+				board[i] = t
+				return not _line_at(board, i))
+			board[i] = options.pick_random() if not options.is_empty() else randi() % PlantData.TYPES.size()
+			fresh.append(i)
+	_add_moves(board, fresh, GameState.MATCH_REFILL_MOVABLE)
+	for i in fresh:
+		var drop := 0
+		while _row(i) + drop + 1 < rows and fresh.has(i + (drop + 1) * cols):
+			drop += 1
+		nodes[i] = _make_piece(board[i], _cell_pos(i) - Vector2(0, (_row(i) + drop + 1) * CELL))
+		moved.append(i)
 	await _move_pieces(moved, FALL_TIME)
 
 func _replace_all_pieces() -> void:
@@ -471,28 +484,123 @@ func _find_groups(b: Array) -> Array:
 		groups.append(group)
 	return groups
 
-func _has_valid_move(b: Array) -> bool:
-	var test := b.duplicate()
-	for i in range(test.size()):
-		for n in _neighbors(i):
-			if n < i or test[n] == test[i]:
-				continue
-			_swap_in(test, i, n)
-			var found := not _find_groups(test).is_empty()
-			_swap_in(test, i, n)
-			if found:
-				return true
-	return false
+# Czy na polu i stoi roslina, ktora z sasiadami tworzy co najmniej 3 w rzedzie.
+func _line_at(b: Array, i: int) -> bool:
+	var t: int = b[i]
+	if t < 0:
+		return false
+	var c := _col(i)
+	var r := _row(i)
+	var run := 1
+	var k := 1
+	while c - k >= 0 and b[i - k] == t:
+		run += 1
+		k += 1
+	k = 1
+	while c + k < cols and b[i + k] == t:
+		run += 1
+		k += 1
+	if run >= 3:
+		return true
+	run = 1
+	k = 1
+	while r - k >= 0 and b[i - k * cols] == t:
+		run += 1
+		k += 1
+	k = 1
+	while r + k < rows and b[i + k * cols] == t:
+		run += 1
+		k += 1
+	return run >= 3
 
-# Losowa plansza bez gotowych trojek, ale z co najmniej jednym mozliwym ruchem.
+# Rodzaje roslin, ktore gracz moze teraz ulozyc w trojke jednym ruchem.
+func _movable_types(b: Array) -> Dictionary:
+	var types := {}
+	for i in range(b.size()):
+		for n in [i + 1, i + cols]:
+			if n >= b.size() or (n == i + 1 and _col(i) == cols - 1) or b[i] == b[n]:
+				continue
+			_swap_in(b, i, n)
+			if _line_at(b, i):
+				types[b[i]] = true
+			if _line_at(b, n):
+				types[b[n]] = true
+			_swap_in(b, i, n)
+	return types
+
+func _has_valid_move(b: Array) -> bool:
+	return not _movable_types(b).is_empty()
+
+# Czy na planszy nie ma zadnej gotowej trojki.
+func _is_calm(b: Array, cells: Array) -> bool:
+	for i in cells:
+		if _line_at(b, i):
+			return false
+	return true
+
+# Losowa plansza bez gotowych trojek, na ktorej wiele rodzajow roslin ma ruch -
+# gracz sam wybiera, ktora roslinke chce ulepszyc.
 func _new_board() -> Array:
 	var b := []
-	while b.is_empty() or not _has_valid_move(b):
-		b = []
-		for i in range(cols * rows):
-			var options := range(PlantData.TYPES.size()).filter(func(t): return not _makes_line(b, i, t))
-			b.append(options.pick_random())
+	for i in range(cols * rows):
+		var options := range(PlantData.TYPES.size()).filter(func(t): return not _makes_line(b, i, t))
+		b.append(options.pick_random())
+	_add_moves(b, range(b.size()), GameState.MATCH_BOARD_MOVABLE)
 	return b
+
+# Zmienia rosliny na wskazanych polach, az ruch bedzie mialo co najmniej "goal"
+# rodzajow roslin (albo skoncza sie proby). Plansza nie dostaje gotowych trojek.
+func _add_moves(b: Array, cells: Array, goal: int) -> void:
+	if cells.is_empty():
+		return
+	var allowed := {}
+	for cell in cells:
+		allowed[cell] = true
+	var movable := _movable_types(b)
+	var tries := 0
+	while movable.size() < goal and tries < 300:
+		tries += 1
+		var missing := range(PlantData.TYPES.size()).filter(func(t): return not movable.has(t))
+		var t: int = missing.pick_random()
+		# Uklad "prawie trojki": dwie takie same obok siebie i trzecia o jedna
+		# zamiane dalej. Gdy sie nie miesci, zmienia sie tylko jedno pole.
+		var pattern := _near_match_pattern(cells.pick_random())
+		if pattern.is_empty() or not pattern.all(func(c): return allowed.has(c)):
+			pattern = [cells.pick_random()]
+		var old := pattern.map(func(c): return b[c])
+		for c in pattern:
+			b[c] = t
+		var changed := []
+		for c in pattern:
+			changed.append(c)
+			changed.append_array(_neighbors(c))
+		var after := _movable_types(b) if _is_calm(b, changed) else {}
+		if after.size() > movable.size():
+			movable = after
+		else:
+			for k in range(pattern.size()):
+				b[pattern[k]] = old[k]
+
+# Trzy pola: a i sasiad w jednym kierunku oraz pole, z ktorego jedna zamiana
+# dosuwa trzecia roslinke w linie (np. po skosie za para). Pusto, gdy wychodzi
+# poza plansze.
+func _near_match_pattern(a: int) -> Array:
+	var r := _row(a)
+	var c := _col(a)
+	var options := []
+	if c + 2 < cols:
+		for dr in [-1, 1]:
+			if r + dr >= 0 and r + dr < rows:
+				options.append([a, a + 1, (r + dr) * cols + c + 2])
+		if c + 3 < cols:
+			options.append([a, a + 1, a + 3])
+	if r + 2 < rows:
+		for dc in [-1, 1]:
+			if c + dc >= 0 and c + dc < cols:
+				options.append([a, a + cols, (r + 2) * cols + c + dc])
+		if r + 3 < rows:
+			options.append([a, a + cols, a + 3 * cols])
+	return options.pick_random() if not options.is_empty() else []
 
 # Czy roslina t na polu i (wypelnianym po kolei) dalaby trojke z poprzednimi.
 func _makes_line(b: Array, i: int, t: int) -> bool:

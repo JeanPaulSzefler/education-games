@@ -36,3 +36,6 @@ const TYPES := [
 		"texture": "res://assets/sprites/enemies/boss_toxic.png",
 	},
 ]
+
+static func name_of(boss_idx: int) -> String:
+	return Lang.t("boss_%d" % boss_idx)

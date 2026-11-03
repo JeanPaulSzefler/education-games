@@ -35,7 +35,9 @@ const REWARD_ICON_SIZE := 36.0
 const BEE_SIZE := 80.0
 const BEE_Y := 500.0
 const BEE_FLIGHT_TIME := 1.2
-const BEE_SIT_SWINGS := 3
+const BEE_SIT_SWINGS := 4
+# Bujanie pszczolki trwa tyle sekund - w tym czasie roslinka rosnie o 3 godziny.
+const BEE_SIT_TIME := BEE_SIT_SWINGS * 0.7 + 0.2
 const TOOL_NONE := ""
 const TOOL_SAPLING := "sapling"
 const TOOL_WATER := "water"
@@ -55,6 +57,10 @@ var timer_labels := {}
 var growth_views := {}
 var bee: Button
 var bee_tween: Tween
+# Pole z pszczolka i ile sekund wzrostu jeszcze nie "minelo" na ekranie.
+var bee_plot := -1
+var bee_boost_left := 0.0
+var bee_sitting := false
 var popup: Control
 var tick := 0.0
 
@@ -65,7 +71,7 @@ func _ready() -> void:
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
 
-	add_child(_label("Ogrod", 44, Vector2(0, 24), VIEWPORT_WIDTH))
+	add_child(_label(Lang.t("garden"), 44, Vector2(0, 24), VIEWPORT_WIDTH))
 
 	var move_icon := UiIcons.match_move(40)
 	move_icon.position = Vector2(810, 34)
@@ -97,7 +103,7 @@ func _ready() -> void:
 	message_label = _label("", 24, Vector2(0, 590), VIEWPORT_WIDTH)
 	add_child(message_label)
 
-	var back_btn := _button("Wroc", TOOL_COLOR, Vector2(40, 620), Vector2(210, 70))
+	var back_btn := _button(Lang.t("back"), TOOL_COLOR, Vector2(40, 620), Vector2(210, 70))
 	back_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/LevelSelect.tscn"))
 	add_child(back_btn)
 
@@ -115,7 +121,7 @@ func _build_shared_controls() -> void:
 		return
 	if not GameState.is_shared_garden_on():
 		return
-	var btn := _button("Sadzimy razem", OK_BTN_COLOR, Vector2(TOOL_X, PLOTS_Y + 2.0 * (TOOL_SIZE.y + PLOT_GAP)), TOOL_SIZE)
+	var btn := _button(Lang.t("plant_together"), OK_BTN_COLOR, Vector2(TOOL_X, PLOTS_Y + 2.0 * (TOOL_SIZE.y + PLOT_GAP)), TOOL_SIZE)
 	btn.pressed.connect(func():
 		NetSession.mode = NetSession.MODE_GARDEN
 		get_tree().change_scene_to_file("res://scenes/TeamPlay.tscn"))
@@ -123,13 +129,13 @@ func _build_shared_controls() -> void:
 	GameState.try_pay_shared_goal()
 
 func _show_shared_question() -> void:
-	var panel := _open_popup_panel("W tym tygodniu mozesz sadzic razem ze znajomym: wspolny cel, wymiana sadzonek i 2 razy wieksza nagroda. Zatwierdzasz?")
-	var no_btn := _button("Nie", TOOL_COLOR, Vector2(50, 190), Vector2(240, 70))
+	var panel := _open_popup_panel(Lang.t("shared_question"))
+	var no_btn := _button(Lang.t("no"), TOOL_COLOR, Vector2(50, 190), Vector2(240, 70))
 	no_btn.pressed.connect(func():
 		GameState.set_shared_choice(false)
 		_close_popup())
 	panel.add_child(no_btn)
-	var yes_btn := _button("Zatwierdzam", OK_BTN_COLOR, Vector2(panel.size.x - 290, 190), Vector2(240, 70))
+	var yes_btn := _button(Lang.t("confirm"), OK_BTN_COLOR, Vector2(panel.size.x - 290, 190), Vector2(240, 70))
 	yes_btn.pressed.connect(func():
 		GameState.set_shared_choice(true)
 		_close_popup()
@@ -156,12 +162,16 @@ func _open_popup_panel(text: String) -> Panel:
 
 	var question := _label(text, 24, Vector2(20, 30), panel.size.x - 40)
 	question.size.y = 150
-	question.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	UiIcons.wrap_label(question, Vector2(panel.size.x - 40, question.size.y))
 	question.add_theme_color_override("font_color", POPUP_TEXT_COLOR)
 	panel.add_child(question)
 	return panel
 
 func _process(delta: float) -> void:
+	# Pszczolka siedzi na roslince: 3 godziny wzrostu mijaja w czasie jej bujania.
+	if bee_sitting:
+		bee_boost_left = maxf(0.0, bee_boost_left - GameState.GARDEN_BEE_SECONDS * delta / BEE_SIT_TIME)
+		_update_timers()
 	tick -= delta
 	if tick > 0.0:
 		return
@@ -227,13 +237,13 @@ func _select_tool(new_tool: String) -> void:
 	tool = TOOL_NONE if tool == new_tool else new_tool
 	if tool == TOOL_SAPLING and GameState.saplings <= 0:
 		tool = TOOL_NONE
-		message_label.text = "Nie masz sadzonek - zdobedziesz je w wydarzeniach."
+		message_label.text = Lang.t("garden_no_saplings")
 	elif tool == TOOL_SAPLING:
-		message_label.text = "Tapnij puste pole, zeby posadzic sadzonke."
+		message_label.text = Lang.t("garden_tap_empty")
 	elif tool == TOOL_WATER:
-		message_label.text = "Tapnij sadzonke, zeby ja podlac."
+		message_label.text = Lang.t("garden_tap_sapling")
 	elif tool == TOOL_BEE:
-		message_label.text = "Tapnij rosnaca roslinke, zeby posadzic na niej pszczolke."
+		message_label.text = Lang.t("garden_tap_bee")
 	else:
 		message_label.text = ""
 	_build_tools()
@@ -297,7 +307,7 @@ func _growth_layer(node: Control) -> Dictionary:
 # w tym samym miejscu, wiec przenikanie etapow nie skacze.
 func _update_growth(i: int) -> void:
 	var stages: Array = growth_views[i]
-	var growth := GameState.plot_growth(i)
+	var growth := 1.0 - _shown_seconds_left(i) / float(GameState.GARDEN_GROW_SECONDS)
 	var height := lerpf(SAPLING_HEIGHT, GROWN_SIZE, growth)
 	var progress := growth * (stages.size() - 1)
 	var current := mini(int(progress), stages.size() - 2)
@@ -349,9 +359,14 @@ func _plot_position(i: int) -> Vector2:
 		PLOTS_Y + int(i / float(PLOTS_PER_ROW)) * (PLOT_SIZE.y + PLOT_GAP)
 	)
 
+# Czas widoczny na polu: przy pszczolce do prawdziwego czasu dochodzi to, co
+# jeszcze nie "uroslo" podczas jej bujania.
+func _shown_seconds_left(i: int) -> int:
+	return GameState.plot_seconds_left(i) + (int(bee_boost_left) if i == bee_plot else 0)
+
 func _update_timers() -> void:
 	for i in timer_labels.keys():
-		var left := GameState.plot_seconds_left(i)
+		var left := _shown_seconds_left(i)
 		timer_labels[i].text = "%02d:%02d:%02d" % [left / 3600, (left % 3600) / 60, left % 60]
 	for i in growth_views.keys():
 		_update_growth(i)
@@ -365,19 +380,19 @@ func _on_plot_pressed(i: int) -> void:
 	match tool:
 		TOOL_SAPLING:
 			if state != GameState.PLOT_EMPTY:
-				message_label.text = "To pole jest zajete."
+				message_label.text = Lang.t("cell_taken")
 				return
 			GameState.plant_sapling(i)
 			if GameState.saplings <= 0:
 				tool = TOOL_NONE
-			message_label.text = "Teraz wybierz kropelke i podlej sadzonke."
+			message_label.text = Lang.t("garden_now_water")
 			_refresh()
 		TOOL_WATER:
 			if state != GameState.PLOT_SAPLING:
-				message_label.text = "Tu nie ma sadzonki do podlania."
+				message_label.text = Lang.t("garden_no_sapling_here")
 				return
 			GameState.water_plot(i)
-			message_label.text = "Roslinka rosnie!"
+			message_label.text = Lang.t("garden_growing")
 			_refresh()
 		TOOL_BEE:
 			_use_bee(i, state)
@@ -385,9 +400,9 @@ func _on_plot_pressed(i: int) -> void:
 			if state == GameState.PLOT_GROWING:
 				_show_rush_popup(i)
 			elif state == GameState.PLOT_SAPLING:
-				message_label.text = "Wybierz kropelke, zeby podlac sadzonke."
+				message_label.text = Lang.t("garden_choose_water")
 			else:
-				message_label.text = "Wybierz sadzonke, zeby ja tu posadzic."
+				message_label.text = Lang.t("garden_choose_sapling")
 
 # --- Pszczolka ---
 func _spawn_bee() -> void:
@@ -409,11 +424,16 @@ func _spawn_bee() -> void:
 # niej i dopiero potem odlatuje. Do jej powrotu nie mozna jej znowu uzyc.
 func _use_bee(i: int, state: String) -> void:
 	if state != GameState.PLOT_GROWING:
-		message_label.text = "Pszczolka pomaga tylko rosnacym roslinkom."
+		message_label.text = Lang.t("garden_bee_only_growing")
 		return
+	# Przyspieszenie zapisuje sie od razu, a na ekranie roslinka rosnie dopiero
+	# wtedy, gdy pszczolka sie na niej buja.
+	var before := GameState.plot_seconds_left(i)
 	GameState.use_bee(i)
+	bee_plot = i
+	bee_boost_left = float(before - GameState.plot_seconds_left(i))
 	tool = TOOL_NONE
-	message_label.text = "Pszczolka leci do roslinki..."
+	message_label.text = Lang.t("garden_bee_flying")
 	_build_tools()
 	_fly_bee_to_plot(i)
 
@@ -426,25 +446,31 @@ func _fly_bee_to_plot(i: int) -> void:
 	var tw := visiting.create_tween()
 	tw.tween_property(visiting, "position", seat, BEE_FLIGHT_TIME).set_trans(Tween.TRANS_SINE)
 	tw.tween_callback(func():
-		message_label.text = "Pszczolka przyspieszyla roslinke o 3 godziny!"
-		_refresh()
-		_check_ready_plots())
+		bee_sitting = true
+		message_label.text = Lang.t("garden_bee_sitting"))
 	for _swing in range(BEE_SIT_SWINGS):
 		tw.tween_property(visiting, "rotation", 0.15, 0.35).set_trans(Tween.TRANS_SINE)
 		tw.tween_property(visiting, "rotation", -0.15, 0.35).set_trans(Tween.TRANS_SINE)
 	tw.tween_property(visiting, "rotation", 0.0, 0.2)
+	tw.tween_callback(func():
+		bee_sitting = false
+		bee_plot = -1
+		bee_boost_left = 0.0
+		message_label.text = Lang.t("garden_bee_done")
+		_refresh()
+		_check_ready_plots())
 	tw.tween_property(visiting, "position", Vector2(VIEWPORT_WIDTH + BEE_SIZE, -BEE_SIZE), BEE_FLIGHT_TIME)
 	tw.tween_callback(visiting.queue_free)
 
 # --- Przyspieszanie za rubiny ---
 func _show_rush_popup(i: int) -> void:
-	var panel := _open_popup_panel("Przyspieszyc te roslinke za %d rubinow?" % GameState.GARDEN_RUSH_RUBIES)
+	var panel := _open_popup_panel(Lang.f("garden_rush_question", [GameState.GARDEN_RUSH_RUBIES]))
 
-	var no_btn := _button("Wroc", TOOL_COLOR, Vector2(50, 190), Vector2(240, 70))
+	var no_btn := _button(Lang.t("back"), TOOL_COLOR, Vector2(50, 190), Vector2(240, 70))
 	no_btn.pressed.connect(_close_popup)
 	panel.add_child(no_btn)
 
-	var yes_btn := _button("Przyspiesz", OK_BTN_COLOR, Vector2(panel.size.x - 290, 190), Vector2(240, 70))
+	var yes_btn := _button(Lang.t("rush"), OK_BTN_COLOR, Vector2(panel.size.x - 290, 190), Vector2(240, 70))
 	yes_btn.disabled = GameState.rubies < GameState.GARDEN_RUSH_RUBIES
 	yes_btn.pressed.connect(func():
 		_close_popup()
@@ -460,16 +486,19 @@ func _close_popup() -> void:
 
 # --- Zbior: gotowa roslinka czeka na tapniecie, a potem daje nagrody i znika ---
 func _check_ready_plots() -> void:
+	# Roslinka z pszczolka bedzie gotowa dopiero po jej bujaniu.
+	if bee_plot >= 0:
+		return
 	if GameState.mark_ready_plots().is_empty():
 		return
-	message_label.text = "Roslinka wyrosla! Tapnij ja, zeby zebrac nagrody."
+	message_label.text = Lang.t("garden_ready")
 	_refresh()
 
 func _collect(i: int) -> void:
 	if not GameState.collect_plot(i):
 		return
 	var origin := _plot_position(i)
-	message_label.text = "+%d roslimonet i +%d ruch do Roslinnych trojek!" % [GameState.GARDEN_HARVEST_COINS, GameState.GARDEN_HARVEST_MOVES]
+	message_label.text = Lang.f("garden_collected", [GameState.GARDEN_HARVEST_COINS, GameState.GARDEN_HARVEST_MOVES])
 
 	# Roslinka maleje i znika, a nagrody leca do licznikow u gory.
 	var plant := UiIcons.plant_icon_tinted(GROWN_PLANT_IDX, GROWN_SIZE, GROWN_TINT)

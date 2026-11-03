@@ -22,53 +22,57 @@ Każde wydarzenie ma 5 etapów o rosnącej trudności (trudność poziomów 2, 6
 | 13 | Łowy na roślimonety | standardowe | Wrogowie upuszczają monety po 5 (szansa 25%); etapy otwarte od razu | brak | sadzonki 2/2/3/3/4 za progi 50/150/300/500/800 monet, zamiast nagród za etapy |
 | 14 | Taśma z podglądem | z taśmy | Widać 3 kolejne rośliny | 20 za wymianę rośliny, każdą raz, w trakcie gry | – |
 
+Etapy 3 i 5 każdego wydarzenia tygodnia dają przy pierwszym przejściu także 1 ruch do Roślinnych trójek.
+
 ## Roślinne trójki (wydarzenie stałe)
 
-Nie jest częścią tygodniowej kolejki. Przycisk jest zawsze u góry ścieżki i pokazuje liczbę ruchów. Plansza 8x6 jest pełna wszystkich 14 roślin, a śmieciostwory nie przychodzą. Gracz zamienia dwie sąsiednie roślinki tak, żeby co najmniej 3 takie same stanęły w rzędzie lub kolumnie. Wtedy znika cała grupa stykających się roślinek tego rodzaju, a roślina dostaje punkty: 3-4 roślinki to 1 punkt, 5-6 to 2, 7-8 to 3. 8 punktów zamienia się w jedno ulepszenie tej rośliny, także jeszcze nieodblokowanej. Zamiana, która nie układa trójki, nie zużywa ruchu. Ruchy: 1 za każdą roślinkę zebraną w ogrodzie (obok 50 roślimonet) i 0-2 ze skrzyni (najczęściej 0). Szczegóły w `README.md` i `scripts/plant_match.gd`.
+Nie jest częścią żadnej rotacji. Przycisk jest zawsze u góry ścieżki i pokazuje liczbę ruchów. Plansza 8x6 jest pełna wszystkich 14 roślin i zostaje między wejściami. Generator dba, żeby ruch miało zawsze co najmniej 10 rodzajów roślin (po każdym ruchu co najmniej 8), więc gracz sam wybiera, którą roślinkę ulepsza. Gracz zamienia dwie sąsiednie roślinki tak, żeby co najmniej 3 takie same stanęły w rzędzie lub kolumnie. Znika wtedy cała grupa stykających się roślinek tego rodzaju, a roślina dostaje punkty: 3-4 roślinki to 1 punkt, 5-6 to 2, 7-8 to 3. 8 punktów zamienia się w jedno ulepszenie tej rośliny, także jeszcze nieodblokowanej. Zamiana, która nie układa trójki, nie zużywa ruchu.
 
-## Propozycje na później (ankieta 2026-11-01)
+Ruchy (notatki 2026-11-03): 1 za każdą roślinkę zebraną w ogrodzie, 0-2 ze skrzyni (najczęściej 0), 1 za pierwsze wygranie poziomu z bossem, 1 za każdą skończoną grę z innym graczem (najwyżej 3 dziennie), 1 za etapy 3 i 5 wydarzenia tygodnia, ruchy z dodatków i z trybu nieskończonego.
 
-Wszystkie 16 propozycji zostało zatwierdzonych do wprowadzenia w przyszłości. Kolejność i liczby są do ustalenia przy wdrażaniu.
+## Dodatki (rotacja co 5 dni)
 
-### Mini-gry bez walki
+Zatwierdzone w ankietach 2026-11-01 i 2026-11-03. Przycisk „Dodatki” na ścieżce. Każdy dodatek trwa 5 dni, potem przychodzi następny, a po ostatnim rotacja zaczyna się od początku. Postępy znikają razem z dodatkiem (album naklejek zostaje). Kolejność i dane: `scripts/addon_data.gd`, zasady walki: `scripts/addon_modes.gd`.
 
-| Nazwa | Na czym polega | Pomoc | Nagroda |
+Etapy (walka, Budowanie ścieżki) mają trudność poziomów 2, 6, 12, 21 i 36. Pierwsze przejście daje: 1 sadzonkę, 1 ruch, 2 sadzonki, 1 ruch, 2 sadzonki i rubin. Każda powtórka daje 10 roślimonet, a co trzecia także sadzonkę. Pomoc kupuje się przed etapem.
+
+| Nr | Nazwa | Rodzaj | Na czym polega | Pomoc za roślimonety |
+|---|---|---|---|---|
+| 1 | Pamięć ogrodnika | mini-gra | 20 kart (10 par). Druga karta kosztuje ruch z trójek, para go oddaje i daje roślinie punkt do ulepszenia. Plansza zostaje do końca dodatku | 30: podgląd planszy przez 3 s (w grze) |
+| 2 | Pory roku | walka | Etapy 1-4: wiosna (Kaktusy x1,5), lato (rośliny bez Liścia Bananowca obok tracą 6 HP co 5 s), jesień (co 20 s wiatr odpycha wrogów o pole), zima (wrogowie i pociski x0,7). Etap 5: pory zmieniają się co 30 s | 40: parasol wyłącza porę roku na 30 s |
+| 3 | Łapanie kropli | mini-gra | Konewka łapie krople (5 pkt), nawóz podwaja punkty, śmieć zabiera 1 z 3 serc. 60 s, coraz szybciej | – |
+| 4 | Ruchome pasy ziemi | walka | Rzędy 2 i 4: co 15 s rośliny przesuwają się o pole w lewo; zepchnięta wraca na pasek i się odnawia | 30: stop taśm na 20 s |
+| 5 | Ogrodowe bingo | meta | Karta 4x4 z 20 możliwych zadań wykonywanych w zwykłych grach. Linia: na zmianę sadzonka i ruch, cała karta: 5 rubinów | 40: zamiana zadania |
+| 6 | Burza | walka | Co 25-35 s: 3 s ostrzeżenia nad 2 rzędami, potem 8 s deszczu (wrogowie x1,5) i piorun w kupkę albo roślinę | 40: piorunochron chroni 3x3 |
+| 7 | Labirynt pszczółki | etapy | 5 labiryntów, pszczółka za palcem, nektar -2 s, pajęczyna = start. 1-3 gwiazdki za czas | – |
+| 8 | Rzeka przez ogród | walka | Środkowy rząd: wrogowie x2, sadzenie tylko na kładce (20 kropli), Kaktusy obok rzeki x1,25 | 30: 2 darmowe kładki |
+| 9 | Album naklejek | meta | 24 naklejki (rośliny, śmieciostwory, bossowie, pszczółka) za wygrane i zbiory w ogrodzie. Strona (8): 5 rubinów, cały album: złota ramka plakietki. Wymiana powtórek przez Wi-Fi | – |
+| 10 | Ochrona drzewka | walka | Drzewko (1200 + 300 na etap HP) w kolumnie 2, rząd 3. Wrogowie skręcają do niego; zjedzone = przegrana. Po fali +50 kropel. 2 rubiny za ostatni etap | 50: podwójne życie |
+| 11 | Budowanie ścieżki | etapy | Plansza 12x7: gracz układa ścieżkę od wejścia do domu (12 pól + 8-12 kamieni), potem sadzi obok Kukurydzę, Pokrzywę (obszar) i Mrozoroślinkę (spowalnia) | 40: 3 kamienie więcej |
+| 12 | Skarby w ziemi | walka | 6 ukrytych skarbów: 50 kropel, nawóz, 20 roślimonet albo rubin (5%). Wróg na polu skarbu go kradnie | 30: wykrywacz pokazuje 2 |
+| 13 | Pszczeli rój | walka | Co 20-30 s pszczółka; złapana daje do wyboru premię na 15 s: odnawianie x2, wrogowie x0,5, krople x2 | 30: pierwsza od razu, na 10 s |
+| 14 | Zagadka obronna | walka | 5 gotowych plansz z roślinami, stałą wodą i jedną falą. Gracz dosadza rośliny i naciska Start | 20: podpowiedź pola |
+| 15 | Pojedynek ze znajomym | meta | Tydzień pojedynków: pierwsza wygrana dnia daje +1 rubin i +30 roślimonet ekstra | – |
+| 16 | Jedna roślinka | walka | Kaktus i jedna losowa roślina (bez wody i Pnączy), inna na każdym etapie. Jednorazowe odnawiają się 2 razy szybciej, strzelające mają nawóz na start | 30: losowanie innej rośliny |
+| 17 | Zbieracz nasion | walka | 30% szans na nasionko z wroga; 5 nasion = darmowa roślina z talii | 30: podwójne nasiona przez 2 fale |
+| 18 | Przesadzanie roślin | walka | Co 10 s przesadzenie rośliny na sąsiednie pole; wrogowie x1,3 | 30: co 5 s |
+| 19 | Uwolnij zwierzątka | walka | 3-5 klatek (250 HP): jeż (ściana), ptaszek (kropla co 15 s), żabka (zjada wroga), motyl (odnawianie x1,5). Wróg przy klatce ją zabiera | 30: klatki z połową życia |
+| 20 | Niewidzialne śmieci | walka | 30-60% wrogów prawie niewidocznych do trafienia albo do 3 pól od rośliny | 30: świetlik w wybranym rzędzie |
+| 21 | Olbrzymia roślinka | walka | Wybrana roślina raz na etap jako olbrzym 2x2: 4x życie, 2 rzędy strzałów, 2x krople, większy wybuch, koszt x2. Wrogowie x1,3 życia | 40: olbrzym z nawozem |
+
+## Gry edukacyjne (osobna rotacja co 5 dni)
+
+Prośba z 2026-11-03: gry edukacyjne mają własny przycisk na ścieżce i własną rotację. Nowe gry edukacyjne dopisuje się do `AddonData.EDU`. Zasady segregacji według systemu w Polsce: żółty (metale i tworzywa), niebieski (papier), zielony (szkło), brązowy (bio), czarny (zmieszane).
+
+| Nr | Nazwa | Na czym polega | Nagrody |
 |---|---|---|---|
-| Pamięć ogrodnika | Plansza 4x5 zakrytych kart z roślinkami. Gracz odsłania dwie: para zostaje odkryta i daje 1 punkt tej roślinie (8 punktów to ulepszenie, jak w trójkach). Próba kosztuje 1 ruch, para oddaje ruch | 30: podgląd całej planszy przez 3 s | punkty do ulepszeń |
-| Łapanie kropli | Z nieba spadają krople wody, nawozy i śmieci. Gracz przesuwa konewkę palcem: krople to punkty, nawóz podwaja punkty do końca rundy, złapany śmieć zabiera 1 z 3 serc. Runda ok. 60 s, coraz szybciej | – | 1/2/3 sadzonki za 100/250/500 punktów |
-| Quiz ekologiczny | 5 pytań na etap, odpowiedzi obrazkami: do którego pojemnika wyrzucić puszkę, butelkę, karton, skórkę banana. Etap raz dziennie, pytania losowane z ok. 60 | – | 20 roślimonet za dobrą odpowiedź, sadzonka za 5/5 |
-| Album naklejek | Za etapy wydarzeń, skrzynie i zbiory z ogrodu losowe naklejki z roślinkami i śmieciostworami (z opisem). Powtórki można wymienić ze znajomym przez Wi-Fi | – | 5 rubinów za pełną stronę (8 naklejek), ramka na plakietkę za cały album |
-
-### Nowe zasady na planszy
-
-| Nazwa | Na czym polega | Pomoc |
-|---|---|---|
-| Pory roku | Każdy z 5 etapów ma porę roku. Wiosna: Kaktusy dają krople 1,5 raza częściej. Lato: rośliny bez Liścia Bananowca obok powoli tracą życie. Jesień: co 20 s wiatr przesuwa wrogów o pole wstecz. Zima: śnieg spowalnia wrogów, ale też strzały | 40: parasol, który wyłącza porę roku na 30 s |
-| Ruchome pasy ziemi | Dwa rzędy to taśmy ziemi: co 15 s posadzone tam rośliny przesuwają się o pole w lewo, a zepchnięta z planszy wraca do paska z odnowieniem | 30: blokada taśmy na 20 s |
-| Burza | Co 25-35 s burza: 3 s ostrzeżenia (chmury nad 2 rzędami), potem deszcz przyspiesza wrogów w tych rzędach na 8 s, a piorun niszczy losową kupkę śmieci albo roślinę bez osłony | 40: piorunochron w wybranym polu, chroni 3x3 |
-| Rzeka przez ogród | Środkowy rząd to rzeka: nie da się tam sadzić, a wrogowie płyną nią 2 razy szybciej. Kładka (20 kropli) mieści jedną roślinę. Kaktusy przy rzece dają krople o 25% częściej | 30: 2 darmowe kładki |
-
-### Nowe cele etapów
-
-| Nazwa | Na czym polega | Pomoc | Dodatkowa nagroda |
-|---|---|---|---|
-| Ochrona drzewka | W środku planszy rośnie Drzewko Życia (dużo życia, bez leczenia). Wrogowie idą do niego zamiast do domu; przegrana, gdy je zjedzą. Między falami Drzewko daje 50 kropel | 50: Drzewko z podwójnym życiem | 2 rubiny za ostatni etap |
-| Sortowanie śmieci | Śmieciostwory mają kolory pojemników: żółty (plastik i metal), niebieski (papier), zielony (szkło), brązowy (bio). Każda roślina dostaje kolor na etap: 2 razy więcej obrażeń wrogom w swoim kolorze, połowa pozostałym. Kolory fal widać przed etapem | – | – |
-| Skarby w ziemi | Pod 6 losowymi polami są skarby. Posadzenie rośliny na takim polu odkrywa skarb: 50 kropel, nawóz, 20 roślimonet albo rzadko rubin. Wróg, który wejdzie na nieodkryty skarb, kradnie go | 30: wykrywacz pokazuje 2 skarby | skarby |
-| Zagadka obronna | Gotowe ustawienie części roślin i stała liczba kropel, bez Kaktusów. Gracz dosadza 2-4 rośliny, potem fala idzie sama i nic nie można zmienić. Jedna fala na etap | 20: podpowiedź jednego pola | – |
-
-### Talia, znajomi, budowanie
-
-| Nazwa | Na czym polega | Pomoc | Nagroda |
-|---|---|---|---|
-| Jedna roślinka | Talia to jedna losowa roślina (bez źródła wody) i Kaktus, inna na każdym etapie. Rośliny jednorazowe szybciej się odnawiają, a strzelające mają dodatkowy nawóz na start | 30: zmiana wylosowanej rośliny | – |
-| Pojedynek ze znajomym | Dwa telefony w tej samej sieci Wi-Fi, każdy broni swojego ogrodu. Każdy pokonany wróg wysyła śmieciostwora do ogrodu znajomego, a co 10. pokonany wysyła dużego. Wygrywa ten, kto dłużej wytrzyma | – | 1 rubin i 30 roślimonet za wygraną, raz dziennie |
-| Budowanie ścieżki | Przed falą gracz układa z 8-12 kamieni krętą ścieżkę, którą wrogowie muszą iść do domu. Rośliny sadzi się obok ścieżki i strzelają w każdym kierunku na 2 pola | 40: 3 dodatkowe kamienie | – |
-| Przesadzanie roślin | Raz na 10 s można przeciągnąć posadzoną roślinę na sąsiednie wolne pole, np. uciec przed bossem. Wrogowie są 1,3 raza szybsi | 30: przesadzanie co 5 s | – |
+| 1 | Quiz ekologiczny | Raz dziennie 5 pytań z 39 śmieci: do którego pojemnika? Po odpowiedzi gra pokazuje właściwy pojemnik | 20 roślimonet za dobrą odpowiedź, sadzonka za 5/5 |
+| 2 | Sortownia | Taśma ze śmieciami, przeciąganie do 5 pojemników, coraz szybciej; 3 błędy albo 90 s kończą rundę | 1/2/3 sadzonki za 15/30/50 (każdy próg raz) |
+| 3 | Sortowanie śmieci | Walka: wrogowie mają kolor pojemnika (butelka i puszka żółte, karton niebieski, gąbka czarna), rośliny losowy kolor na etap. Ten sam kolor: obrażenia x2, inny: x0,5 | jak etapy dodatków |
 
 ## Kod testowy
 
-Na plakietce każdego konta jest przycisk „Kod testowy”. Poprawny kod pozwala raz zmienić bieżące wydarzenie na dowolne inne, a kolejna zmiana wymaga ponownego wpisania kodu. Gracz decyduje, czy postępy z opuszczanego wydarzenia mają się zapisać. Zapisane wracają przy ponownym przejściu na to wydarzenie kodem. Wybrane wydarzenie startuje z pełnym tygodniem, a potem gra przechodzi do następnego w kolejności. Po 3 nieudanych próbach z rzędu opcja blokuje się na 10 minut na całym telefonie, niezależnie od konta. W repozytorium jest tylko skrót kodu (`TEST_CODE_SHA256` w `scripts/game_state.gd`). **Przed wydaniem gry ten kod trzeba usunąć.**
+Na plakietce każdego konta jest przycisk „Kod testowy”. Poprawny kod pozwala raz zmienić bieżące wydarzenie, dodatek albo grę edukacyjną na dowolne inne (wybrany dodatek startuje od razu z pełnymi 5 dniami), a kolejna zmiana wymaga ponownego wpisania kodu. Gracz decyduje, czy postępy z opuszczanego wydarzenia mają się zapisać. Zapisane wracają przy ponownym przejściu na to wydarzenie kodem. Wybrane wydarzenie startuje z pełnym tygodniem, a potem gra przechodzi do następnego w kolejności. Po 3 nieudanych próbach z rzędu opcja blokuje się na 10 minut na całym telefonie, niezależnie od konta. W repozytorium jest tylko skrót kodu (`TEST_CODE_SHA256` w `scripts/game_state.gd`). **Przed wydaniem gry ten kod trzeba usunąć.**
 
 ## Sadzenie razem (opcja w tygodniu Łowów)
 

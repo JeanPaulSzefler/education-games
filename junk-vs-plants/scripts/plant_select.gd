@@ -1,7 +1,8 @@
 extends Control
 
 # Ekran wyboru talii - pokazuje sie zawsze przed poziomem (takze gdy gracz ma
-# tylko 2 rosliny, jako przypomnienie "oto twoje rosliny").
+# tylko 2 rosliny, jako przypomnienie "oto twoje rosliny"). Rosliny sa w
+# kolejnosci, w jakiej gracz je odblokowuje.
 
 const VIEWPORT_WIDTH := 1280
 const VIEWPORT_HEIGHT := 720
@@ -22,6 +23,7 @@ var max_plants := GameState.MAX_LOADOUT
 var rent_slot := false
 # plant_idx -> {"border_sb": StyleBoxFlat, "mark": Panel albo null}
 var card_refs: Dictionary = {}
+var cards_layer: Control
 
 var counter_label: Label
 var message_label: Label
@@ -40,13 +42,13 @@ func _ready() -> void:
 	add_child(bg)
 
 	var title := Label.new()
-	title.text = level["name"]
+	title.text = LevelData.title(level)
 	title.position = Vector2(40, 16)
 	title.add_theme_font_size_override("font_size", 30)
 	add_child(title)
 
 	subtitle = Label.new()
-	subtitle.text = "Wybierz rosliny do tej gry (najwyzej %d)" % GameState.MAX_LOADOUT
+	subtitle.text = Lang.f("select_max", [GameState.MAX_LOADOUT])
 	subtitle.position = Vector2(40, 58)
 	subtitle.add_theme_font_size_override("font_size", 18)
 	add_child(subtitle)
@@ -58,7 +60,7 @@ func _ready() -> void:
 
 	if level.get("endless", false):
 		var endless_label := Label.new()
-		endless_label.text = "Przetrwaj jak najdluzej, bossowie moga przyjsc w kazdej chwili. Rekord: %d" % GameState.endless_best
+		endless_label.text = Lang.f("select_endless", [GameState.endless_best])
 		endless_label.position = Vector2(230, 84)
 		endless_label.add_theme_font_size_override("font_size", 16)
 		add_child(endless_label)
@@ -74,7 +76,7 @@ func _ready() -> void:
 		add_child(boss_icon)
 
 		var boss_label := Label.new()
-		boss_label.text = "Na koncu: %s" % BossData.TYPES[boss_idx]["name"]
+		boss_label.text = Lang.f("select_boss", [BossData.name_of(boss_idx)])
 		boss_label.position = Vector2(264, 84)
 		boss_label.add_theme_font_size_override("font_size", 16)
 		add_child(boss_label)
@@ -85,13 +87,17 @@ func _ready() -> void:
 	message_label.add_theme_color_override("font_color", Color(0.9, 0.35, 0.25))
 	add_child(message_label)
 
-	var event: Dictionary = GameState.current_event() if GameState.is_event_game() else {}
+	var event: Dictionary = GameState.playing_event()
 	banned_roles = event.get("banned_roles", [])
 	if event.get("forced_deck", false):
 		forced_plants = GameState.event_forced_plants
-		max_plants = forced_plants.size() + (1 if GameState.event_help_active else 0)
-		subtitle.text = "Te rosliny sa narzucone" + (" - mozesz dodac czwarta" if GameState.event_help_active else "")
+		var extra: bool = GameState.event_help_active and not event.get("single_plant", false)
+		max_plants = forced_plants.size() + (1 if extra else 0)
+		subtitle.text = Lang.t("select_forced") + (" " + Lang.t("select_forced_extra") if extra else "")
 		selected = forced_plants.duplicate()
+		# Jedna roslinka: kupiona pomoc pozwala raz wylosowac inna rosline.
+		if event.get("single_plant", false) and GameState.event_help_active:
+			_build_reroll_button()
 	else:
 		var loadout := GameState.get_loadout(_loadout_key())
 		if loadout.is_empty():
@@ -100,18 +106,21 @@ func _ready() -> void:
 		# Talia z wypozyczonym miejscem wraca do 6 roslin - miejsce bylo na jedna gre.
 		selected = loadout.filter(_is_plant_allowed).slice(0, max_plants)
 
+	cards_layer = Control.new()
+	cards_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(cards_layer)
 	_build_grid()
 	_update_counter()
 
 	var back_btn := Button.new()
-	back_btn.text = "Wroc"
+	back_btn.text = Lang.t("back")
 	back_btn.position = Vector2(40, 640)
 	back_btn.size = Vector2(220, 60)
 	back_btn.pressed.connect(_on_back_pressed)
 	add_child(back_btn)
 
 	play_button = Button.new()
-	play_button.text = "Graj!"
+	play_button.text = Lang.t("play_excl")
 	play_button.position = Vector2(1020, 640)
 	play_button.size = Vector2(220, 60)
 	play_button.pressed.connect(_on_play_pressed)
@@ -122,6 +131,28 @@ func _ready() -> void:
 	if NetSession.active:
 		NetSession.game_starting.connect(_start_game)
 		NetSession.session_lost.connect(_on_back_pressed)
+
+func _build_reroll_button() -> void:
+	var btn := Button.new()
+	btn.text = Lang.t("select_reroll")
+	btn.position = Vector2(400, 640)
+	btn.size = Vector2(480, 60)
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.add_theme_font_size_override("font_size", 20)
+	btn.pressed.connect(func():
+		var old: Array = GameState.event_forced_plants
+		var deck: Array = old
+		while deck == old:
+			deck = GameState._random_single_plant_deck()
+		GameState.event_forced_plants = deck
+		forced_plants = deck
+		selected = deck.duplicate()
+		btn.queue_free()
+		for child in cards_layer.get_children():
+			child.queue_free()
+		_build_grid()
+		_update_counter())
+	add_child(btn)
 
 # Siodme miejsce za rubiny: tylko na sciezce i tylko, gdy gracz ma wiecej roslin,
 # niz miesci sie w zwyklej talii.
@@ -149,17 +180,17 @@ func _update_rent_button() -> void:
 	if rent_button == null:
 		return
 	if rent_slot:
-		rent_button.text = "Oddaj 7. miejsce (nie placisz)"
+		rent_button.text = Lang.t("rent_cancel")
 	else:
-		rent_button.text = "7. miejsce na te gre za %d" % GameState.RENT_SLOT_RUBIES
+		rent_button.text = Lang.f("rent_offer", [GameState.RENT_SLOT_RUBIES])
 	rent_button.disabled = not rent_slot and GameState.rubies < GameState.RENT_SLOT_RUBIES
 
 func _on_rent_pressed() -> void:
 	rent_slot = not rent_slot
 	max_plants = GameState.MAX_LOADOUT + (1 if rent_slot else 0)
-	subtitle.text = "Wybierz rosliny do tej gry (najwyzej %d)" % max_plants
+	subtitle.text = Lang.f("select_max", [max_plants])
 	if rent_slot:
-		message_label.text = "Rubiny zaplacisz dopiero, gdy zaczniesz gre z 7 roslinami."
+		message_label.text = Lang.t("rent_pay_later")
 	else:
 		message_label.text = ""
 		while selected.size() > max_plants:
@@ -172,12 +203,13 @@ func _build_grid() -> void:
 	card_refs.clear()
 	var total_width := CARDS_PER_ROW * CARD_SIZE.x + (CARDS_PER_ROW - 1) * CARD_GAP.x
 	var start_x := (VIEWPORT_WIDTH - total_width) / 2.0
-	for plant_idx in range(PlantData.TYPES.size()):
-		var col := plant_idx % CARDS_PER_ROW
-		var row := int(plant_idx / float(CARDS_PER_ROW))
+	var order := PlantData.unlock_order()
+	for k in range(order.size()):
+		var col := k % CARDS_PER_ROW
+		var row := int(k / float(CARDS_PER_ROW))
 		var x := start_x + col * (CARD_SIZE.x + CARD_GAP.x)
 		var y := GRID_TOP + row * (CARD_SIZE.y + CARD_GAP.y)
-		_build_card(plant_idx, x, y)
+		_build_card(order[k], x, y)
 
 func _build_card(plant_idx: int, x: float, y: float) -> void:
 	var pt: Dictionary = PlantData.TYPES[plant_idx]
@@ -195,19 +227,13 @@ func _build_card(plant_idx: int, x: float, y: float) -> void:
 
 	var border_sb := StyleBoxFlat.new()
 	border_sb.bg_color = Color(0.22, 0.3, 0.2)
-	border_sb.border_width_left = 4
-	border_sb.border_width_right = 4
-	border_sb.border_width_top = 4
-	border_sb.border_width_bottom = 4
+	border_sb.set_border_width_all(4)
 	border_sb.border_color = Color(0.15, 0.75, 0.2) if is_selected else Color(0.4, 0.4, 0.35)
-	border_sb.corner_radius_top_left = 14
-	border_sb.corner_radius_top_right = 14
-	border_sb.corner_radius_bottom_left = 14
-	border_sb.corner_radius_bottom_right = 14
+	border_sb.set_corner_radius_all(14)
 	for state in ["normal", "hover", "pressed", "disabled"]:
 		card.add_theme_stylebox_override(state, border_sb)
 
-	add_child(card)
+	cards_layer.add_child(card)
 
 	var icon := TextureRect.new()
 	icon.texture = load(pt["texture"])
@@ -221,10 +247,11 @@ func _build_card(plant_idx: int, x: float, y: float) -> void:
 	card.add_child(icon)
 
 	var name_label := Label.new()
-	name_label.text = pt["name"]
+	name_label.text = PlantData.name_of(plant_idx)
 	name_label.position = Vector2(8, 130)
 	name_label.size = Vector2(CARD_SIZE.x - 16, 24)
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_label.clip_text = true
 	name_label.add_theme_font_size_override("font_size", 16)
 	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(name_label)
@@ -253,17 +280,11 @@ func _build_card(plant_idx: int, x: float, y: float) -> void:
 		mark.position = Vector2(CARD_SIZE.x - 34, 8)
 		mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		mark.visible = is_selected
-		var mark_sb := StyleBoxFlat.new()
-		mark_sb.bg_color = Color(0.15, 0.75, 0.2)
-		mark_sb.corner_radius_top_left = 13
-		mark_sb.corner_radius_top_right = 13
-		mark_sb.corner_radius_bottom_left = 13
-		mark_sb.corner_radius_bottom_right = 13
-		mark.add_theme_stylebox_override("panel", mark_sb)
+		mark.add_theme_stylebox_override("panel", UiIcons.round_style(Color(0.15, 0.75, 0.2), 13))
 		card.add_child(mark)
 	else:
 		var lock_label := Label.new()
-		lock_label.text = "niedostepna" if GameState.is_event_game() else "od poziomu %d" % pt.get("unlock_level", 1)
+		lock_label.text = Lang.t("select_unavailable") if GameState.is_event_game() else Lang.f("select_from_level", [pt.get("unlock_level", 1)])
 		lock_label.position = Vector2(8, 158)
 		lock_label.size = Vector2(CARD_SIZE.x - 16, 24)
 		lock_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -282,18 +303,18 @@ func _is_plant_allowed(plant_idx: int) -> bool:
 	# Narzucona talia: czwarta roslina moze byc dowolna, takze nieodblokowana,
 	# zeby nowy gracz nie zaplacil za pomoc, ktorej nie ma jak uzyc.
 	if not forced_plants.is_empty():
-		return GameState.event_help_active
+		return max_plants > forced_plants.size()
 	return GameState.is_plant_unlocked(plant_idx)
 
 func _on_card_pressed(plant_idx: int) -> void:
 	if forced_plants.has(plant_idx):
-		message_label.text = "Tej rosliny nie mozna zdjac"
+		message_label.text = Lang.t("select_forced_locked")
 		return
 	if selected.has(plant_idx):
 		selected.erase(plant_idx)
 	else:
 		if selected.size() >= max_plants:
-			message_label.text = "Mozesz wybrac najwyzej %d roslin" % max_plants
+			message_label.text = Lang.f("select_too_many", [max_plants])
 			return
 		selected.append(plant_idx)
 	message_label.text = ""
@@ -308,19 +329,19 @@ func _update_card_visual(plant_idx: int) -> void:
 		refs["mark"].visible = is_selected
 
 func _update_counter() -> void:
-	counter_label.text = "Wybrane: %d / %d" % [selected.size(), max_plants]
+	counter_label.text = Lang.f("select_count", [selected.size(), max_plants])
 	if play_button:
 		play_button.disabled = selected.is_empty()
 
 func _on_back_pressed() -> void:
 	NetSession.end_session()
-	get_tree().change_scene_to_file("res://scenes/Events.tscn" if GameState.is_event_game() else "res://scenes/LevelSelect.tscn")
+	get_tree().change_scene_to_file(GameState.play_screen() if GameState.is_event_game() else "res://scenes/LevelSelect.tscn")
 
 func _on_play_pressed() -> void:
 	if selected.is_empty():
 		return
 	if selected.size() > GameState.MAX_LOADOUT and not GameState.rent_extra_slot():
-		message_label.text = "Brakuje rubinow na 7. miejsce."
+		message_label.text = Lang.t("rent_no_rubies")
 		return
 	var ordered := []
 	for i in range(PlantData.TYPES.size()):
@@ -329,14 +350,14 @@ func _on_play_pressed() -> void:
 	GameState.current_loadout = ordered
 	GameState.set_loadout(_loadout_key(), ordered)
 	if NetSession.active:
-		# Gra zespolowa rusza dopiero, gdy obaj gracze wybiora rosliny.
+		# Gra z innym graczem rusza dopiero, gdy obaj gracze wybiora rosliny.
 		play_button.disabled = true
-		message_label.text = "Czekam na znajomego..."
+		message_label.text = Lang.t("waiting_for_friend")
 		NetSession.mark_ready()
 		return
 	_start_game()
 
-# Gra zespolowa i wydarzenia maja wlasne talie, niezalezne od poziomow sciezki.
+# Gra z innym graczem i wydarzenia maja wlasne talie, niezalezne od poziomow sciezki.
 func _loadout_key() -> int:
 	if GameState.is_event_game():
 		return EVENT_LOADOUT_KEY

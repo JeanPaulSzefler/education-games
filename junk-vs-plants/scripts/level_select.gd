@@ -31,17 +31,10 @@ const DELETE_BTN_COLOR := Color(0.75, 0.18, 0.15)
 const MOVES_BADGE_COLOR := Color(0.85, 0.3, 0.2)
 # Ikonka "Moich roslinek" - Lisc Bananowca (indeks w PlantData.TYPES).
 const MY_PLANTS_ICON_PLANT := 2
-const GAME_RULES_TEXT := "Smieciostwory ida przez ogrod do domu - nie pozwol im dojsc! " + \
-	"Wybierz roslinke z paska po lewej i tapnij pole ogrodu, zeby ja posadzic. " + \
-	"Sadzenie kosztuje krople wody: daja je Kaktusy, a krople zbierasz tapnieciem. " + \
-	"Za kazdy wygrany poziom dostajesz rubin (raz na poziom). " + \
-	"Co kilka poziomow na sciezce czeka nowa roslinka - wejdz w jej kolko, zeby ja odblokowac. " + \
-	"Miedzy roslinkami stoja skrzynie z rubinami i roslimonetami. " + \
-	"Pokonana roslinka po prostu znika. Nawozy pojawiaja sie same na planszy - tapnij, zeby je zebrac; ich limit zwiekszysz w sklepie. " + \
-	"W Roslinnych trojkach zamieniasz sasiednie roslinki, zeby ulozyc 3 takie same w rzedzie - 8 punktow to ulepszenie tej roslinki. " + \
-	"Ruchy dostajesz za roslinki wyhodowane w ogrodzie, a czasem w skrzyni."
+const LOCKED_BTN_COLOR := Color(0.35, 0.35, 0.35)
+const NEW_SECTION_COLOR := Color(0.75, 0.35, 0.1)
 const SHOP_OFFERS := [
-	{"rubies": 2, "price": "Reklama", "ad": true},
+	{"rubies": 2, "price": "", "ad": true},
 	{"rubies": 10, "price": "5 zl"},
 	{"rubies": 20, "price": "9 zl"},
 	{"rubies": 50, "price": "20 zl"},
@@ -68,6 +61,10 @@ var plant_hit_nodes: Array = []
 var chest_hit_nodes: Array = []
 var ruby_label: Label
 var coin_label: Label
+# Przyciski funkcji wedlug nazwy celu przewodnika (GuideData) i jego strzalka.
+var feature_buttons := {}
+var guide_arrow: Control
+var guide_tween: Tween
 
 var min_offset := 0.0
 var max_offset := 0.0
@@ -83,6 +80,9 @@ func _ready() -> void:
 	bg.size = Vector2(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
+	var picture := UiIcons.background(Vector2(VIEWPORT_WIDTH, VIEWPORT_HEIGHT))
+	if picture != null:
+		add_child(picture)
 
 	var title := Label.new()
 	title.text = "Junk vs Plants"
@@ -112,6 +112,7 @@ func _ready() -> void:
 	var start_offset: float = VIEWPORT_WIDTH / 2.0 - x_current
 	path_layer.position.x = clamp(start_offset, min_offset, max_offset)
 	_update_arrow_visibility()
+	_update_guide_arrow()
 
 	# Np. znajomy wyszedl z gry zespolowej, zanim sie zaczela.
 	if NetSession.notice != "":
@@ -223,9 +224,7 @@ func _build_level_node(level_idx: int, x: float) -> void:
 		tw.tween_property(btn, "scale", Vector2(1.0, 1.0), 0.6).set_trans(Tween.TRANS_SINE)
 
 	var name_label := Label.new()
-	var level_name: String = level["name"]
-	var dash: int = level_name.find("-")
-	name_label.text = level_name.substr(dash + 2) if dash >= 0 else level_name
+	name_label.text = LevelData.place_name(level)
 	name_label.position = Vector2(x - 70, NODE_Y + LEVEL_NODE_SIZE / 2.0 + 4)
 	name_label.size = Vector2(140, 30)
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -235,7 +234,7 @@ func _build_level_node(level_idx: int, x: float) -> void:
 
 	if endless and GameState.endless_best > 0:
 		var best_label := Label.new()
-		best_label.text = "Rekord: %d" % GameState.endless_best
+		best_label.text = Lang.f("record", [GameState.endless_best])
 		best_label.position = Vector2(x - 70, NODE_Y + LEVEL_NODE_SIZE / 2.0 + 28)
 		best_label.size = Vector2(140, 26)
 		best_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -329,7 +328,7 @@ func _build_plant_node(plant_idx: int, x: float) -> void:
 		})
 
 	var name_label := Label.new()
-	name_label.text = pt["name"]
+	name_label.text = PlantData.name_of(plant_idx)
 	name_label.position = Vector2(x - 60, NODE_Y + PLANT_NODE_SIZE / 2.0 + 4)
 	name_label.size = Vector2(120, 26)
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -373,7 +372,7 @@ func _build_chest_node(chest_level: int, x: float) -> void:
 		})
 
 	var name_label := Label.new()
-	name_label.text = "Skrzynia"
+	name_label.text = Lang.t("chest")
 	name_label.position = Vector2(x - 60, NODE_Y + PLANT_NODE_SIZE / 2.0 + 4)
 	name_label.size = Vector2(120, 26)
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -505,31 +504,29 @@ func _handle_tap(pos: Vector2) -> void:
 				get_tree().change_scene_to_file("res://scenes/PlantSelect.tscn")
 			return
 
-# --- Ikonki w rogach ekranu ---
+# --- Ikonki na ekranie ---
+# Gora: ustawienia, opis gry, Roslinne trojki; po prawej monety, rubiny i sklep.
+# Dol: moje roslinki, ogrod, wydarzenie, dodatki, gry edukacyjne; po prawej gra z
+# innym graczem nad plakietka gracza. Funkcje odblokowuja sie po kolei (GuideData).
 func _build_corner_buttons() -> void:
-	var book_btn := _make_corner_button(Vector2(CORNER_MARGIN, CORNER_MARGIN), "Opis gry")
-	_add_centered_icon(book_btn, UiIcons.book(CORNER_BTN_SIZE - 16))
-	book_btn.pressed.connect(_show_game_info)
+	var gear_btn := _make_corner_button(Vector2(CORNER_MARGIN, CORNER_MARGIN), Lang.t("settings"))
+	_add_centered_icon(gear_btn, UiIcons.gear(CORNER_BTN_SIZE - 20))
+	gear_btn.pressed.connect(_show_settings)
 
-	# Roslinne trojki: wydarzenie stale, zawsze u gory ekranu, z liczba ruchow.
-	var match_btn := _make_corner_button(Vector2(CORNER_MARGIN + CORNER_BTN_SIZE + 50, CORNER_MARGIN), "Roslinne trojki")
-	_add_centered_icon(match_btn, UiIcons.match_event(CORNER_BTN_SIZE - 16))
-	match_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/PlantMatch.tscn"))
-	var moves_badge := Label.new()
-	moves_badge.text = str(GameState.match_moves)
-	moves_badge.size = Vector2(36, 36)
-	moves_badge.position = Vector2(CORNER_BTN_SIZE - 26, -10)
-	moves_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	moves_badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	moves_badge.add_theme_font_size_override("font_size", 18)
-	moves_badge.add_theme_stylebox_override("normal", UiIcons.round_style(MOVES_BADGE_COLOR, 18))
-	moves_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	match_btn.add_child(moves_badge)
+	var info_btn := _feature_button("info", Vector2(CORNER_MARGIN + 130, CORNER_MARGIN), Lang.t("game_info"), UiIcons.book(CORNER_BTN_SIZE - 16))
+	info_btn.pressed.connect(_show_game_info)
+
+	# Roslinne trojki: wydarzenie stale, u gory ekranu, z liczba ruchow.
+	var match_btn := _feature_button("match", Vector2(CORNER_MARGIN + 260, CORNER_MARGIN), Lang.t("plant_match"), UiIcons.match_event(CORNER_BTN_SIZE - 16))
+	match_btn.pressed.connect(func(): _open_feature("match", "res://scenes/PlantMatch.tscn"))
+	if not match_btn.disabled:
+		_add_count_badge(match_btn, GameState.match_moves)
 
 	var shop_x := VIEWPORT_WIDTH - CORNER_MARGIN - CORNER_BTN_SIZE
-	var shop_btn := _make_corner_button(Vector2(shop_x, CORNER_MARGIN), "Sklep")
-	_add_centered_icon(shop_btn, UiIcons.shop(CORNER_BTN_SIZE - 16))
-	shop_btn.pressed.connect(_show_shop)
+	var shop_btn := _feature_button("shop", Vector2(shop_x, CORNER_MARGIN), Lang.t("shop"), UiIcons.shop(CORNER_BTN_SIZE - 16))
+	shop_btn.pressed.connect(func():
+		GuideData.mark_target_seen("shop")
+		_show_shop())
 
 	# Liczba rubinow gracza - na lewo od sklepu.
 	var ruby_icon := UiIcons.ruby(40)
@@ -539,39 +536,108 @@ func _build_corner_buttons() -> void:
 	var coin_icon := UiIcons.plant_coin(40)
 	coin_icon.position = Vector2(shop_x - 190, CORNER_MARGIN + (CORNER_BTN_SIZE - 40) / 2.0)
 	add_child(coin_icon)
-	coin_label = Label.new()
-	coin_label.text = str(GameState.plant_coins)
-	coin_label.position = Vector2(shop_x - 190 - 110, CORNER_MARGIN + (CORNER_BTN_SIZE - 44) / 2.0)
-	coin_label.size = Vector2(100, 44)
-	coin_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	coin_label.add_theme_font_size_override("font_size", 32)
-	coin_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(coin_label)
-
-	ruby_label = Label.new()
-	ruby_label.text = str(GameState.rubies)
-	ruby_label.position = Vector2(shop_x - 52 - 110, CORNER_MARGIN + (CORNER_BTN_SIZE - 44) / 2.0)
-	ruby_label.size = Vector2(100, 44)
-	ruby_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	ruby_label.add_theme_font_size_override("font_size", 32)
-	ruby_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(ruby_label)
+	coin_label = _counter_label(str(GameState.plant_coins), Vector2(shop_x - 190 - 110, CORNER_MARGIN + (CORNER_BTN_SIZE - 44) / 2.0))
+	ruby_label = _counter_label(str(GameState.rubies), Vector2(shop_x - 52 - 110, CORNER_MARGIN + (CORNER_BTN_SIZE - 44) / 2.0))
 
 	var bottom_y := VIEWPORT_HEIGHT - CORNER_MARGIN - CORNER_BTN_SIZE - 22
-	var plants_btn := _make_corner_button(Vector2(CORNER_MARGIN, bottom_y), "Moje roslinki")
-	_add_centered_icon(plants_btn, UiIcons.plant_icon(MY_PLANTS_ICON_PLANT, CORNER_BTN_SIZE - 16))
-	plants_btn.pressed.connect(_show_my_plants)
+	var plants_btn := _feature_button("my_plants", Vector2(CORNER_MARGIN, bottom_y), Lang.t("my_plants"), UiIcons.plant_icon(MY_PLANTS_ICON_PLANT, CORNER_BTN_SIZE - 16))
+	plants_btn.pressed.connect(func():
+		GuideData.mark_target_seen("my_plants")
+		_show_my_plants())
 
-	# Wydarzenia poza sciezka: ogrod (stale) i wydarzenie tygodnia.
-	var center_x := VIEWPORT_WIDTH / 2.0
-	var garden_btn := _make_corner_button(Vector2(center_x - CORNER_BTN_SIZE - 30, bottom_y), "Ogrod")
-	_add_centered_icon(garden_btn, UiIcons.sapling(CORNER_BTN_SIZE - 16))
-	garden_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/Garden.tscn"))
-	var event_btn := _make_corner_button(Vector2(center_x + 30, bottom_y), "Wydarzenie")
-	_add_centered_icon(event_btn, UiIcons.star(CORNER_BTN_SIZE - 16))
-	event_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/Events.tscn"))
+	# Wydarzenia poza sciezka: ogrod, wydarzenie tygodnia, dodatki i gry edukacyjne.
+	var x := 390.0
+	var garden_btn := _feature_button("garden", Vector2(x, bottom_y), Lang.t("garden"), UiIcons.sapling(CORNER_BTN_SIZE - 16))
+	garden_btn.pressed.connect(func(): _open_feature("garden", "res://scenes/Garden.tscn"))
+	var event_btn := _feature_button("event", Vector2(x + 140, bottom_y), Lang.t("weekly_event"), UiIcons.star(CORNER_BTN_SIZE - 16))
+	event_btn.pressed.connect(func(): _open_feature("event", "res://scenes/Events.tscn"))
+	var addon_btn := _feature_button("addons", Vector2(x + 280, bottom_y), Lang.t("addons"), UiIcons.addon(CORNER_BTN_SIZE - 16))
+	addon_btn.pressed.connect(func():
+		GameState.rotation_view = AddonData.KIND_ADDON
+		_open_feature("addons", "res://scenes/Rotation.tscn"))
+	var edu_btn := _feature_button("education", Vector2(x + 420, bottom_y), Lang.t("edu_games"), UiIcons.education(CORNER_BTN_SIZE - 16))
+	edu_btn.pressed.connect(func():
+		GameState.rotation_view = AddonData.KIND_EDU
+		_open_feature("education", "res://scenes/Rotation.tscn"))
+
+	# Gra z innym graczem: nad plakietka gracza (notatki 2026-11-03).
+	var mp_btn := _feature_button("multiplayer", Vector2(VIEWPORT_WIDTH - CORNER_MARGIN - CORNER_BTN_SIZE - 40, bottom_y - 112), Lang.t("multiplayer"), UiIcons.multiplayer_icon(CORNER_BTN_SIZE - 12))
+	mp_btn.pressed.connect(func():
+		NetSession.mode = NetSession.MODE_GAME
+		_open_feature("multiplayer", "res://scenes/TeamPlay.tscn"))
 
 	_build_player_badge(bottom_y)
+
+	guide_arrow = UiIcons.guide_arrow(54)
+	guide_arrow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	guide_arrow.visible = false
+	add_child(guide_arrow)
+
+func _counter_label(text: String, pos: Vector2) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.position = pos
+	label.size = Vector2(100, 44)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	label.add_theme_font_size_override("font_size", 32)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(label)
+	return label
+
+# Przycisk funkcji: zablokowany (szary, z klodka i numerem poziomu), dopoki
+# przewodnik jej nie odblokuje.
+func _feature_button(target: String, pos: Vector2, caption: String, icon: Control) -> Button:
+	var unlocked := GuideData.is_target_unlocked(target)
+	var btn := _make_corner_button(pos, caption if unlocked else Lang.f("unlocks_after", [GuideData.step_for_target(target)["after"]]))
+	_add_centered_icon(btn, icon)
+	feature_buttons[target] = btn
+	if not unlocked:
+		btn.disabled = true
+		icon.modulate = Color(0.3, 0.3, 0.3)
+		UiIcons.style_button(btn, LOCKED_BTN_COLOR, int(CORNER_BTN_SIZE / 2.0))
+		var lock := UiIcons.padlock(34)
+		lock.position = Vector2(CORNER_BTN_SIZE - 30, CORNER_BTN_SIZE - 34)
+		btn.add_child(lock)
+	return btn
+
+func _open_feature(target: String, scene: String) -> void:
+	GuideData.mark_target_seen(target)
+	get_tree().change_scene_to_file(scene)
+
+func _add_count_badge(btn: Button, count: int) -> void:
+	var badge := Label.new()
+	badge.text = str(count)
+	badge.size = Vector2(36, 36)
+	badge.position = Vector2(CORNER_BTN_SIZE - 26, -10)
+	badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	badge.add_theme_font_size_override("font_size", 18)
+	badge.add_theme_stylebox_override("normal", UiIcons.round_style(MOVES_BADGE_COLOR, 18))
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	btn.add_child(badge)
+
+# Strzalka przewodnika nad przyciskiem kolejnej nowej funkcji (jedna naraz).
+func _update_guide_arrow() -> void:
+	if guide_arrow == null:
+		return
+	var step := GuideData.next_step()
+	if step.is_empty() or not feature_buttons.has(step["target"]):
+		guide_arrow.visible = false
+		return
+	var btn: Button = feature_buttons[step["target"]]
+	var top := btn.position.y < VIEWPORT_HEIGHT / 2.0
+	guide_arrow.visible = true
+	guide_arrow.rotation = PI if top else 0.0
+	guide_arrow.pivot_offset = guide_arrow.size / 2.0
+	var base := btn.position + Vector2((CORNER_BTN_SIZE - guide_arrow.size.x) / 2.0, CORNER_BTN_SIZE + 26 if top else -guide_arrow.size.y - 6)
+	guide_arrow.position = base
+	if guide_tween != null:
+		guide_tween.kill()
+	guide_tween = guide_arrow.create_tween().set_loops()
+	var tw := guide_tween
+	var shift := Vector2(0, 10 if top else -10)
+	tw.tween_property(guide_arrow, "position", base + shift, 0.45).set_trans(Tween.TRANS_SINE)
+	tw.tween_property(guide_arrow, "position", base, 0.45).set_trans(Tween.TRANS_SINE)
 
 func _make_corner_button(pos: Vector2, caption: String) -> Button:
 	var btn := Button.new()
@@ -587,6 +653,8 @@ func _make_corner_button(pos: Vector2, caption: String) -> Button:
 	label.size = Vector2(CORNER_BTN_SIZE + 60, 22)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.add_theme_font_size_override("font_size", 15)
+	label.add_theme_color_override("font_outline_color", Color(0.05, 0.1, 0.05))
+	label.add_theme_constant_override("outline_size", 4)
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(label)
 	return btn
@@ -595,13 +663,19 @@ func _add_centered_icon(btn: Button, icon: Control) -> void:
 	icon.position = (btn.size - icon.size) / 2.0
 	btn.add_child(icon)
 
-# Plakietka gracza: nazwa + ikona; tapniecie otwiera zmiane nazwy i ikony.
+# Plakietka gracza: nazwa + ikona; tapniecie otwiera zmiane nazwy i ikony. Pelny
+# album naklejek daje zlota ramke.
 func _build_player_badge(y: float) -> void:
 	var badge := Button.new()
 	badge.size = Vector2(260, CORNER_BTN_SIZE)
 	badge.position = Vector2(VIEWPORT_WIDTH - CORNER_MARGIN - badge.size.x, y)
 	badge.focus_mode = Control.FOCUS_NONE
 	UiIcons.style_button(badge, CORNER_BTN_COLOR, 18)
+	if GameState.album_frame:
+		var sb := UiIcons.round_style(CORNER_BTN_COLOR, 18)
+		sb.set_border_width_all(5)
+		sb.border_color = Color(1.0, 0.8, 0.2)
+		badge.add_theme_stylebox_override("normal", sb)
 	badge.pressed.connect(_show_player_edit)
 	add_child(badge)
 
@@ -620,7 +694,7 @@ func _build_player_badge(y: float) -> void:
 	badge.add_child(icon)
 
 	var caption := Label.new()
-	caption.text = "Gracz"
+	caption.text = Lang.t("player")
 	caption.position = Vector2(badge.position.x, y + CORNER_BTN_SIZE + 2)
 	caption.size = Vector2(badge.size.x, 22)
 	caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -680,6 +754,7 @@ func _close_popup() -> void:
 	if popup != null:
 		popup.queue_free()
 		popup = null
+	_update_guide_arrow()
 
 func _popup_label(text: String, font_size: int) -> Label:
 	var label := Label.new()
@@ -699,24 +774,39 @@ func _popup_button(text: String, color: Color, pos: Vector2, btn_size: Vector2) 
 	UiIcons.style_button(btn, color, 16)
 	return btn
 
+# Lista w okienku z przewijaniem palcem. Wiersze i przyciski przepuszczaja
+# przesuwanie do ScrollContainer (inaczej dalo sie przewijac tylko w szparach
+# miedzy wierszami - blad z notatek 2026-11-03).
+func _scroll_list(panel: Panel, pos: Vector2, size: Vector2, separation: int) -> VBoxContainer:
+	var scroll := ScrollContainer.new()
+	scroll.position = pos
+	scroll.size = size
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.scroll_deadzone = 8
+	panel.add_child(scroll)
+	var list := VBoxContainer.new()
+	list.custom_minimum_size = Vector2(size.x - 20, 0)
+	list.add_theme_constant_override("separation", separation)
+	list.mouse_filter = Control.MOUSE_FILTER_PASS
+	scroll.add_child(list)
+	return list
+
 func _plant_summary(plant_idx: int) -> String:
-	var pt: Dictionary = PlantData.TYPES[plant_idx]
-	return "%s (%d kropli): %s" % [pt["name"], pt["cost"], pt.get("description", "")]
+	return Lang.f("plant_summary", [PlantData.name_of(plant_idx), PlantData.TYPES[plant_idx]["cost"], PlantData.description_of(plant_idx)])
 
 # "Wejscie" w kolko rosliny: duza ikona, "Odblokowujesz: ..." i opis. Roslina
 # odblokowuje sie (i otwiera sie nastepny poziom) po tapnieciu "Super!" -
 # okienko nie ma "X", zeby nie dalo sie go zamknac bez odebrania rosliny.
 func _show_plant_unlock(plant_idx: int) -> void:
-	var pt: Dictionary = PlantData.TYPES[plant_idx]
 	var panel := _open_popup(Vector2(640, 560), "", false)
 
-	var header := _popup_label("Odblokowujesz:", 26)
+	var header := _popup_label(Lang.t("you_unlock"), 26)
 	header.position = Vector2(0, 18)
 	header.size = Vector2(panel.size.x, 36)
 	header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	panel.add_child(header)
 
-	var name_label := _popup_label(pt["name"], 40)
+	var name_label := _popup_label(PlantData.name_of(plant_idx), 40)
 	name_label.position = Vector2(0, 54)
 	name_label.size = Vector2(panel.size.x, 52)
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -731,14 +821,13 @@ func _show_plant_unlock(plant_idx: int) -> void:
 	var tw := icon.create_tween()
 	tw.tween_property(icon, "scale", Vector2(1, 1), 0.6).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
-	var desc := _popup_label(pt.get("description", ""), 22)
+	var desc := _popup_label(PlantData.description_of(plant_idx), 22)
 	desc.position = Vector2(40, 352)
-	desc.size = Vector2(panel.size.x - 80, 90)
 	desc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	UiIcons.wrap_label(desc, Vector2(panel.size.x - 80, 90))
 	panel.add_child(desc)
 
-	var ok_btn := _popup_button("Super!", OK_BTN_COLOR, Vector2((panel.size.x - 220) / 2.0, 462), Vector2(220, 70))
+	var ok_btn := _popup_button(Lang.t("great"), OK_BTN_COLOR, Vector2((panel.size.x - 220) / 2.0, 462), Vector2(220, 70))
 	ok_btn.pressed.connect(func():
 		GameState.claim_plant(plant_idx)
 		get_tree().reload_current_scene())
@@ -750,7 +839,7 @@ func _show_chest(chest_level: int) -> void:
 	var reward := GameState.open_chest(chest_level)
 	if reward.is_empty():
 		return
-	var panel := _open_popup(Vector2(640, 500), "Skrzynia!", false)
+	var panel := _open_popup(Vector2(640, 500), Lang.t("chest_title"), false)
 
 	var icon := UiIcons.chest(170)
 	icon.position = Vector2((panel.size.x - 170) / 2.0, 70)
@@ -768,7 +857,7 @@ func _show_chest(chest_level: int) -> void:
 		_add_reward_row(panel, 150.0, "+%d" % reward["rubies"], UiIcons.ruby(56))
 		_add_reward_row(panel, 340.0, "+%d" % reward["coins"], UiIcons.plant_coin(56))
 
-	var ok_btn := _popup_button("Super!", OK_BTN_COLOR, Vector2((panel.size.x - 220) / 2.0, 400), Vector2(220, 70))
+	var ok_btn := _popup_button(Lang.t("great"), OK_BTN_COLOR, Vector2((panel.size.x - 220) / 2.0, 400), Vector2(220, 70))
 	ok_btn.pressed.connect(func(): get_tree().reload_current_scene())
 	panel.add_child(ok_btn)
 
@@ -782,32 +871,33 @@ func _add_reward_row(panel: Panel, x: float, amount: String, icon: Control) -> v
 	icon.position = Vector2(x + 76, 290)
 	panel.add_child(icon)
 
-# "Opis gry": krotkie zasady + funkcje roslin, ktore gracz juz odblokowal.
+# "Opis gry": rozdzialy przewodnika, ktore gracz juz odblokowal (najnowsze z
+# napisem "Nowe!"), i funkcje jego roslin. Otwarcie oznacza rozdzialy jako obejrzane.
 func _show_game_info() -> void:
-	var panel := _open_popup(Vector2(900, 600), "Opis gry")
-	var scroll := ScrollContainer.new()
-	scroll.position = Vector2(30, 70)
-	scroll.size = Vector2(panel.size.x - 60, panel.size.y - 90)
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	panel.add_child(scroll)
+	var panel := _open_popup(Vector2(900, 600), Lang.t("game_info"))
+	var list := _scroll_list(panel, Vector2(30, 70), Vector2(panel.size.x - 60, panel.size.y - 90), 10)
+	var row_width: float = list.custom_minimum_size.x
 
-	var row_width := scroll.size.x - 20
-	var list := VBoxContainer.new()
-	list.custom_minimum_size = Vector2(row_width, 0)
-	list.add_theme_constant_override("separation", 10)
-	scroll.add_child(list)
+	for step in GuideData.unlocked_steps():
+		var fresh := not GameState.is_guide_seen(step["id"])
+		var heading := _popup_label(Lang.t("guide_" + step["id"]) + ("   " + Lang.t("new_label") if fresh else ""), 24)
+		if fresh:
+			heading.add_theme_color_override("font_color", NEW_SECTION_COLOR)
+		list.add_child(heading)
+		var text := _popup_label(Lang.t("guide_%s_text" % step["id"]), 19)
+		text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		text.custom_minimum_size = Vector2(row_width, 0)
+		list.add_child(text)
+	GuideData.mark_target_seen("info")
 
-	var rules := _popup_label(GAME_RULES_TEXT, 20)
-	rules.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	rules.custom_minimum_size = Vector2(row_width, 0)
-	list.add_child(rules)
-
-	list.add_child(_popup_label("Twoje roslinki:", 24))
-
+	list.add_child(_popup_label(Lang.t("your_plants"), 24))
 	var unlocked := GameState.unlocked_plant_indices()
-	for p_idx in unlocked:
+	for p_idx in PlantData.unlock_order():
+		if not unlocked.has(p_idx):
+			continue
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 14)
+		row.mouse_filter = Control.MOUSE_FILTER_PASS
 		row.add_child(UiIcons.plant_icon(p_idx, 64))
 		var text := _popup_label(_plant_summary(p_idx), 19)
 		text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -816,38 +906,39 @@ func _show_game_info() -> void:
 		row.add_child(text)
 		list.add_child(row)
 
-	var locked_count := PlantData.TYPES.size() - unlocked.size()
-	if locked_count > 0:
-		var more := _popup_label("Kolejne roslinki (%d) pojawia sie tutaj, kiedy je odblokujesz." % locked_count, 18)
+	var locked_steps := GuideData.STEPS.size() - GuideData.unlocked_steps().size()
+	if locked_steps > 0:
+		var more := _popup_label(Lang.t("more_chapters_later"), 18)
 		more.add_theme_color_override("font_color", Color(0.4, 0.38, 0.35))
 		list.add_child(more)
 
-# "Moje roslinki": wszystkie rosliny - odblokowane w kolorze, reszta jako
-# cien. Tapniecie rosliny pokazuje jej opis i ulepszenie; ulepszac mozna takze
-# te, ktorych gracz jeszcze nie odblokowal.
+# "Moje roslinki": wszystkie rosliny w kolejnosci odblokowywania - odblokowane
+# w kolorze, reszta jako cien. Tapniecie rosliny pokazuje jej opis i ulepszenie;
+# ulepszac mozna takze te, ktorych gracz jeszcze nie odblokowal.
 func _show_my_plants(selected := -1) -> void:
-	var panel := _open_popup(Vector2(1000, 620), "Moje roslinki")
+	var panel := _open_popup(Vector2(1000, 620), Lang.t("my_plants"))
 	var per_row := 7
 	var cell := 116.0
 	var gap := 14.0
 	var start_x := (panel.size.x - (per_row * cell + (per_row - 1) * gap)) / 2.0
 
-	var desc := _popup_label("Tapnij roslinke, zeby zobaczyc, co robi, i ja ulepszyc.", 20)
+	var desc := _popup_label(Lang.t("my_plants_hint"), 20)
 	if selected >= 0:
 		desc.text = _plant_summary(selected)
 		if not GameState.is_plant_unlocked(selected):
-			desc.text += " Odblokujesz ja na poziomie %d." % PlantData.TYPES[selected].get("unlock_level", 1)
+			desc.text += " " + Lang.f("unlock_at_level", [PlantData.TYPES[selected].get("unlock_level", 1)])
 		_build_plant_upgrade(panel, selected)
 	desc.position = Vector2(40, 442)
-	desc.size = Vector2(panel.size.x - 80, 76)
 	desc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	UiIcons.wrap_label(desc, Vector2(panel.size.x - 80, 76))
 	panel.add_child(desc)
 
-	for p_idx in range(PlantData.TYPES.size()):
+	var order := PlantData.unlock_order()
+	for k in range(order.size()):
+		var p_idx: int = order[k]
 		var unlocked := GameState.is_plant_unlocked(p_idx)
 		var btn := Button.new()
-		btn.position = Vector2(start_x + (p_idx % per_row) * (cell + gap), 80 + int(p_idx / float(per_row)) * (cell + 80))
+		btn.position = Vector2(start_x + (k % per_row) * (cell + gap), 80 + int(k / float(per_row)) * (cell + 80))
 		btn.size = Vector2(cell, cell)
 		btn.focus_mode = Control.FOCUS_NONE
 		UiIcons.style_button(btn, Color(0.55, 0.8, 0.4) if unlocked else Color(0.55, 0.55, 0.55), 16)
@@ -859,10 +950,11 @@ func _show_my_plants(selected := -1) -> void:
 		btn.pressed.connect(func(): _show_my_plants(p_idx))
 		panel.add_child(btn)
 
-		var name_label := _popup_label(PlantData.TYPES[p_idx]["name"], 15)
+		var name_label := _popup_label(PlantData.name_of(p_idx), 15)
 		name_label.position = Vector2(btn.position.x - 10, btn.position.y + cell + 2)
 		name_label.size = Vector2(cell + 20, 22)
 		name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		name_label.clip_text = true
 		panel.add_child(name_label)
 
 		var level_bar := UiIcons.segment_bar(Vector2(cell, 14), GameState.plant_upgrade_level(p_idx), GameState.PLANT_UPGRADE_MAX_LEVEL)
@@ -877,17 +969,16 @@ func _build_plant_upgrade(panel: Panel, plant_idx: int) -> void:
 	level_bar.position = Vector2(40, 547)
 	panel.add_child(level_bar)
 
-	var effect: String = PlantData.UPGRADE_EFFECTS[PlantData.TYPES[plant_idx]["role"]]
+	var effect := Lang.t("upgrade_" + PlantData.TYPES[plant_idx]["role"])
 	var bonus := (GameState.plant_power(plant_idx) - 1.0) * 100.0
-	var info := _popup_label("+%.1f%% (%s). Masz rubinow: %d" % [bonus, effect, GameState.rubies], 20)
+	var info := _popup_label(Lang.f("upgrade_info", [bonus, effect, GameState.rubies]), 20)
 	info.position = Vector2(316, 526)
-	info.size = Vector2(panel.size.x - 316 - 310, 70)
-	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	UiIcons.wrap_label(info, Vector2(panel.size.x - 316 - 310, 70))
 	info.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	panel.add_child(info)
 
 	var price := GameState.plant_upgrade_price(plant_idx)
-	var buy_text := "Maksimum" if price < 0 else "Ulepsz za %d" % price
+	var buy_text := Lang.t("maximum") if price < 0 else Lang.f("upgrade_buy", [price])
 	var buy_btn := _popup_button(buy_text, OK_BTN_COLOR, Vector2(panel.size.x - 290, 526), Vector2(210, 70))
 	buy_btn.disabled = price < 0 or GameState.rubies < price
 	buy_btn.pressed.connect(func():
@@ -910,7 +1001,7 @@ func _on_ad_offer_pressed() -> void:
 # Google Play, wiec na razie to tylko podglad ofert z nieaktywnymi przyciskami.
 # Ponizej lista wszystkiego, co mozna kupic za rubiny i roslimonety.
 func _show_shop() -> void:
-	var panel := _open_popup(Vector2(960, 640), "Sklep")
+	var panel := _open_popup(Vector2(960, 640), Lang.t("shop"))
 	var card_size := Vector2(160, 220)
 	var gap := 22.0
 	var start_x := (panel.size.x - (SHOP_OFFERS.size() * card_size.x + (SHOP_OFFERS.size() - 1) * gap)) / 2.0
@@ -932,33 +1023,25 @@ func _show_shop() -> void:
 		ruby.position = Vector2(94, 32)
 		card.add_child(ruby)
 
-		var price: String = offer["price"]
+		var price: String = Lang.t("ad") if offer.get("ad", false) else offer["price"]
 		var price_btn := _popup_button(price, Color(0.3, 0.5, 0.75), Vector2(14, card_size.y - 84), Vector2(card_size.x - 28, 64))
 		price_btn.add_theme_font_size_override("font_size", 24 if price.length() < 7 else 19)
 		price_btn.disabled = true
 		if offer.get("ad", false):
 			price_btn.disabled = not GameState.is_ad_offer_ready()
 			if price_btn.disabled:
-				price_btn.text = "Jutro"
+				price_btn.text = Lang.t("tomorrow")
 			price_btn.pressed.connect(_on_ad_offer_pressed)
 		card.add_child(price_btn)
 
-	var info := _popup_label("Masz: %d rubinow, %d roslimonet. Zakupy za pieniadze dodamy pozniej." %[GameState.rubies, GameState.plant_coins], 20)
+	var info := _popup_label(Lang.f("shop_you_have", [GameState.rubies, GameState.plant_coins]), 20)
 	info.position = Vector2(0, 294)
 	info.size = Vector2(panel.size.x, 34)
 	info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	info.add_theme_color_override("font_color", Color(0.5, 0.3, 0.2))
 	panel.add_child(info)
 
-	var scroll := ScrollContainer.new()
-	scroll.position = Vector2(30, 334)
-	scroll.size = Vector2(panel.size.x - 60, panel.size.y - 350)
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	panel.add_child(scroll)
-	var list := VBoxContainer.new()
-	list.custom_minimum_size = Vector2(scroll.size.x - 20, 0)
-	list.add_theme_constant_override("separation", 8)
-	scroll.add_child(list)
+	var list := _scroll_list(panel, Vector2(30, 334), Vector2(panel.size.x - 60, panel.size.y - 350), 8)
 	_build_ruby_offers(list)
 	_build_coin_offers(list)
 
@@ -967,18 +1050,19 @@ func _show_shop() -> void:
 func _add_shop_row(list: VBoxContainer, text: String, price_text: String, price_icon: Control, enabled: bool, on_buy: Callable) -> void:
 	var row := Panel.new()
 	row.custom_minimum_size = Vector2(list.custom_minimum_size.x, 66)
+	row.mouse_filter = Control.MOUSE_FILTER_PASS
 	row.add_theme_stylebox_override("panel", UiIcons.round_style(Color(1.0, 0.98, 0.92), 12))
 	list.add_child(row)
 
 	var label := _popup_label(text, 19)
 	label.position = Vector2(14, 0)
-	label.size = Vector2(row.custom_minimum_size.x - 270, 66)
-	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	UiIcons.wrap_label(label, Vector2(row.custom_minimum_size.x - 270, 66))
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	row.add_child(label)
 
 	var btn := _popup_button(price_text, OK_BTN_COLOR, Vector2(row.custom_minimum_size.x - 240, 8), Vector2(180, 50))
 	btn.add_theme_font_size_override("font_size", 20)
+	btn.mouse_filter = Control.MOUSE_FILTER_PASS
 	btn.disabled = not enabled
 	btn.pressed.connect(func():
 		if on_buy.call():
@@ -989,65 +1073,88 @@ func _add_shop_row(list: VBoxContainer, text: String, price_text: String, price_
 	price_icon.position = Vector2(row.custom_minimum_size.x - 50, 15)
 	row.add_child(price_icon)
 
+func _list_note(list: VBoxContainer, text: String) -> void:
+	var note := _popup_label(text, 18)
+	note.custom_minimum_size = Vector2(list.custom_minimum_size.x, 30)
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	list.add_child(note)
+
 func _build_ruby_offers(list: VBoxContainer) -> void:
-	list.add_child(_popup_label("Za rubiny", 24))
+	list.add_child(_popup_label(Lang.t("for_rubies"), 24))
 	var limit_price := GameState.next_fertilizer_limit_price()
 	if limit_price < 0:
-		_add_shop_row(list, "Limit nawozow: %d (najwiekszy)" % GameState.fertilizer_limit, "Maksimum", UiIcons.ruby(36), false, func(): return false)
+		_add_shop_row(list, Lang.f("shop_fertilizer_max", [GameState.fertilizer_limit]), Lang.t("maximum"), UiIcons.ruby(36), false, func(): return false)
 	else:
-		_add_shop_row(list, "Limit nawozow: %d, kup miejsce na kolejny" % GameState.fertilizer_limit, "Kup za %d" % limit_price, UiIcons.ruby(36),
+		_add_shop_row(list, Lang.f("shop_fertilizer", [GameState.fertilizer_limit]), Lang.f("buy_for", [limit_price]), UiIcons.ruby(36),
 			GameState.rubies >= limit_price, GameState.buy_fertilizer_limit)
 
 	var plot := GameState.soonest_growing_plot()
-	var rush_text := "Ogrod: przyspiesz roslinke, ktora urosnie najszybciej" if plot >= 0 else "Ogrod: przyspieszenie roslinki (teraz nic nie rosnie)"
-	_add_shop_row(list, rush_text, "Kup za %d" % GameState.GARDEN_RUSH_RUBIES, UiIcons.ruby(36),
+	var rush_text := Lang.t("shop_rush") if plot >= 0 else Lang.t("shop_rush_none")
+	_add_shop_row(list, rush_text, Lang.f("buy_for", [GameState.GARDEN_RUSH_RUBIES]), UiIcons.ruby(36),
 		plot >= 0 and GameState.rubies >= GameState.GARDEN_RUSH_RUBIES,
 		func():
 			var bought := GameState.rush_plot(plot)
 			GameState.mark_ready_plots()
 			return bought)
 
-	var upgrade_row := _popup_label("Ulepszenia roslin kupisz w \"Moich roslinkach\": tapnij roslinke.", 18)
-	upgrade_row.custom_minimum_size = Vector2(list.custom_minimum_size.x, 30)
-	list.add_child(upgrade_row)
-	var rent_row := _popup_label("7. miejsce w talii (%d rubiny na jedna gre) wypozyczysz przed poziomem, przy wyborze roslin." % GameState.RENT_SLOT_RUBIES, 18)
-	rent_row.custom_minimum_size = Vector2(list.custom_minimum_size.x, 30)
-	list.add_child(rent_row)
+	_list_note(list, Lang.t("shop_upgrades_note"))
+	_list_note(list, Lang.f("shop_rent_note", [GameState.RENT_SLOT_RUBIES]))
 
 # Pomoce do wydarzen widac wszystkie, ale kupic mozna tylko te z biezacego.
 func _build_coin_offers(list: VBoxContainer) -> void:
-	list.add_child(_popup_label("Za roslimonety", 24))
+	list.add_child(_popup_label(Lang.t("for_coins"), 24))
 	var current := GameState.current_event()
 	for event in EventData.ROTATION:
 		var is_current: bool = not current.is_empty() and event["id"] == current["id"]
+		var event_name := Lang.t("event_" + event["id"])
 		if event.has("help"):
-			var help: Dictionary = event["help"]
+			var help_text := Lang.t("event_%s_help" % event["id"])
+			var cost: int = event["help"]["cost"]
 			if is_current and GameState.event_help_prepaid:
-				_add_shop_row(list, "%s: %s" % [event["name"], help["text"]], "Kupione", UiIcons.plant_coin(36), false, func(): return false)
+				_add_shop_row(list, "%s: %s" % [event_name, help_text], Lang.t("bought"), UiIcons.plant_coin(36), false, func(): return false)
 			else:
-				var suffix := "" if is_current else " (gdy trwa to wydarzenie)"
-				_add_shop_row(list, "%s: %s%s" % [event["name"], help["text"], suffix], "Kup za %d" % help["cost"], UiIcons.plant_coin(36),
-					is_current and GameState.plant_coins >= help["cost"], GameState.buy_event_help)
+				var suffix := "" if is_current else " " + Lang.t("when_event_runs")
+				_add_shop_row(list, "%s: %s%s" % [event_name, help_text, suffix], Lang.f("buy_for", [cost]), UiIcons.plant_coin(36),
+					is_current and GameState.plant_coins >= cost, GameState.buy_event_help)
 		if event.get("belt_preview", false):
-			var cost: int = event["preview_swap_cost"]
-			var swap_text := "%s: wymiana rosliny (masz %d)" % [event["name"], GameState.event_swap_credits] if is_current else "%s: wymiana rosliny (gdy trwa to wydarzenie)" % event["name"]
-			_add_shop_row(list, swap_text, "Kup za %d" % cost, UiIcons.plant_coin(36),
-				is_current and GameState.plant_coins >= cost, GameState.buy_swap_credit)
+			var swap_cost: int = event["preview_swap_cost"]
+			var swap_text := Lang.f("shop_swap", [event_name, GameState.event_swap_credits]) if is_current else Lang.f("shop_swap_later", [event_name])
+			_add_shop_row(list, swap_text, Lang.f("buy_for", [swap_cost]), UiIcons.plant_coin(36),
+				is_current and GameState.plant_coins >= swap_cost, GameState.buy_swap_credit)
 		if event.get("shared_garden", false):
 			var ready: bool = is_current and GameState.is_shared_garden_on()
-			var gift_text := "Sadzenie razem: dodatkowa sadzonka dla znajomego (masz %d)" % GameState.shared_gift_credits if ready else "Sadzenie razem: dodatkowa sadzonka dla znajomego (po zatwierdzeniu w ogrodzie, w tygodniu Lowow)"
-			_add_shop_row(list, gift_text, "Kup za %d" % EventData.GIFT_COST, UiIcons.plant_coin(36),
+			var gift_text := Lang.f("shop_gift", [GameState.shared_gift_credits]) if ready else Lang.t("shop_gift_later")
+			_add_shop_row(list, gift_text, Lang.f("buy_for", [EventData.GIFT_COST]), UiIcons.plant_coin(36),
 				ready and GameState.plant_coins >= EventData.GIFT_COST, GameState.buy_gift_credit)
+	_list_note(list, Lang.t("shop_addon_help_note"))
+
+# --- Ustawienia: jezyk konta ---
+func _show_settings() -> void:
+	var panel := _open_popup(Vector2(760, 520), Lang.t("settings"))
+	var caption := _popup_label(Lang.t("language_choose"), 24)
+	caption.position = Vector2(40, 76)
+	panel.add_child(caption)
+	var columns := 2
+	var btn_size := Vector2(320, 70)
+	for i in range(Lang.CODES.size()):
+		var pos := Vector2(40 + (i % columns) * (btn_size.x + 40), 120 + int(i / float(columns)) * (btn_size.y + 16))
+		var active := Lang.current == i
+		var btn := _popup_button(Lang.NAMES[i], OK_BTN_COLOR if active else CORNER_BTN_COLOR, pos, btn_size)
+		var lang_code: String = Lang.CODES[i]
+		btn.pressed.connect(func():
+			GameState.set_language(lang_code)
+			get_tree().reload_current_scene())
+		panel.add_child(btn)
 
 # Zmiana nazwy i ikony gracza. Ikonka roslinki ma trzy stany: klodka (roslina
 # jeszcze zablokowana), szara (do odblokowania w kilku krokach) i kolorowa (do
 # wyboru; dwie startowe sa kolorowe od razu).
 # draft_* przechowuja niezapisane zmiany na czas okienka odblokowania ikonki.
 func _show_player_edit(draft_name := GameState.player_name, draft_icon := GameState.player_icon) -> void:
-	var panel := _open_popup(Vector2(1000, 470), "Gracz")
+	var panel := _open_popup(Vector2(1000, 470), Lang.t("player"))
 	var chosen := {"icon": draft_icon}
 
-	var name_caption := _popup_label("Nazwa:", 22)
+	var name_caption := _popup_label(Lang.t("name_label"), 22)
 	name_caption.position = Vector2(40, 86)
 	panel.add_child(name_caption)
 
@@ -1059,11 +1166,11 @@ func _show_player_edit(draft_name := GameState.player_name, draft_icon := GameSt
 	name_edit.add_theme_font_size_override("font_size", 24)
 	panel.add_child(name_edit)
 
-	var code_btn := _popup_button("Kod testowy", CORNER_BTN_COLOR, Vector2(570, 76), Vector2(200, 52))
+	var code_btn := _popup_button(Lang.t("test_code"), CORNER_BTN_COLOR, Vector2(570, 76), Vector2(200, 52))
 	code_btn.pressed.connect(_show_code_entry)
 	panel.add_child(code_btn)
 
-	var icon_caption := _popup_label("Ikona:", 22)
+	var icon_caption := _popup_label(Lang.t("icon_label"), 22)
 	icon_caption.position = Vector2(40, 182)
 	panel.add_child(icon_caption)
 
@@ -1076,7 +1183,7 @@ func _show_player_edit(draft_name := GameState.player_name, draft_icon := GameSt
 
 	# p_idx -> StyleBoxFlat, zeby po wyborze przelaczyc zlota ramke.
 	var icon_styles := {}
-	for p_idx in range(PlantData.TYPES.size()):
+	for p_idx in PlantData.unlock_order():
 		var btn := Button.new()
 		btn.custom_minimum_size = Vector2(80, 80)
 		btn.focus_mode = Control.FOCUS_NONE
@@ -1105,7 +1212,7 @@ func _show_player_edit(draft_name := GameState.player_name, draft_icon := GameSt
 		icon.position = Vector2(8, 8)
 		btn.add_child(icon)
 
-	var icons_hint := _popup_label("Szara ikonka: tapnij, zeby ja odblokowac. Klodka: najpierw zdobadz te roslinke.", 18)
+	var icons_hint := _popup_label(Lang.t("icons_hint"), 18)
 	icons_hint.position = Vector2(40, 344)
 	icons_hint.size = Vector2(panel.size.x - 80, 26)
 	icons_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1117,52 +1224,48 @@ func _show_player_edit(draft_name := GameState.player_name, draft_icon := GameSt
 	panel.add_child(error_label)
 
 	# Powrot do ekranu wyboru konta (konta sa lokalne, bez hasla).
-	var switch_btn := _popup_button("Zmien konto", CORNER_BTN_COLOR, Vector2(40, panel.size.y - 96), Vector2(220, 70))
+	var switch_btn := _popup_button(Lang.t("switch_account"), CORNER_BTN_COLOR, Vector2(40, panel.size.y - 96), Vector2(240, 70))
 	switch_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/ProfileSelect.tscn"))
 	panel.add_child(switch_btn)
 
-	var delete_btn := _popup_button("Usun konto", DELETE_BTN_COLOR, Vector2(270, panel.size.y - 96), Vector2(220, 70))
+	var delete_btn := _popup_button(Lang.t("delete_account"), DELETE_BTN_COLOR, Vector2(300, panel.size.y - 96), Vector2(240, 70))
 	delete_btn.pressed.connect(_show_delete_confirm)
 	panel.add_child(delete_btn)
 
-	var team_btn := _popup_button("Gra zespolowa", Color(0.3, 0.5, 0.75), Vector2(500, panel.size.y - 96), Vector2(230, 70))
-	team_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/TeamPlay.tscn"))
-	panel.add_child(team_btn)
-
-	var save_btn := _popup_button("Zapisz", OK_BTN_COLOR, Vector2(panel.size.x - 260, panel.size.y - 96), Vector2(220, 70))
+	var save_btn := _popup_button(Lang.t("save"), OK_BTN_COLOR, Vector2(panel.size.x - 260, panel.size.y - 96), Vector2(220, 70))
 	save_btn.pressed.connect(func():
 		if GameState.set_player(name_edit.text, chosen["icon"]):
 			get_tree().reload_current_scene()
 		else:
-			error_label.text = "Konto o tej nazwie juz istnieje.")
+			error_label.text = Lang.t("name_taken"))
 	panel.add_child(save_btn)
 
 # Odblokowanie ikonki: szara ikona, postep i przycisk kolejnego kroku. Po
 # ostatnim kroku ikonka staje sie kolorowa i od razu jest wybrana.
 func _show_icon_unlock(plant_idx: int, draft_name: String, draft_icon: int) -> void:
-	var panel := _open_popup(Vector2(600, 500), "Odblokuj ikonke", false)
+	var panel := _open_popup(Vector2(600, 500), Lang.t("unlock_icon"), false)
 
 	var icon := UiIcons.plant_icon_gray(plant_idx, 180)
 	icon.position = Vector2((panel.size.x - 180) / 2.0, 70)
 	panel.add_child(icon)
 
-	var name_label := _popup_label(PlantData.TYPES[plant_idx]["name"], 28)
+	var name_label := _popup_label(PlantData.name_of(plant_idx), 28)
 	name_label.position = Vector2(0, 256)
 	name_label.size = Vector2(panel.size.x, 40)
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	panel.add_child(name_label)
 
-	var progress := _popup_label("Postep: %d / %d" % [GameState.icon_steps_done(plant_idx), GameState.icon_steps_required(plant_idx)], 22)
+	var progress := _popup_label(Lang.f("icon_progress", [GameState.icon_steps_done(plant_idx), GameState.icon_steps_required(plant_idx)]), 22)
 	progress.position = Vector2(0, 302)
 	progress.size = Vector2(panel.size.x, 34)
 	progress.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	panel.add_child(progress)
 
-	var back_btn := _popup_button("Wroc", CORNER_BTN_COLOR, Vector2(40, panel.size.y - 100), Vector2(190, 70))
+	var back_btn := _popup_button(Lang.t("back"), CORNER_BTN_COLOR, Vector2(40, panel.size.y - 100), Vector2(190, 70))
 	back_btn.pressed.connect(func(): _show_player_edit(draft_name, draft_icon))
 	panel.add_child(back_btn)
 
-	var step_btn := _popup_button("Odblokowuj", OK_BTN_COLOR, Vector2(panel.size.x - 330, panel.size.y - 100), Vector2(290, 70))
+	var step_btn := _popup_button(Lang.t("unlock_step"), OK_BTN_COLOR, Vector2(panel.size.x - 330, panel.size.y - 100), Vector2(290, 70))
 	step_btn.pressed.connect(func():
 		_show_greeting(func():
 			GameState.record_icon_step(plant_idx)
@@ -1182,7 +1285,7 @@ func _show_greeting(on_finished: Callable) -> void:
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 18)
 	panel.add_child(row)
-	row.add_child(_popup_label("Miłego grania!", 48))
+	row.add_child(_popup_label(Lang.t("have_fun"), 48))
 	row.add_child(UiIcons.sapling(80))
 
 	var countdown := _popup_label(str(int(GREETING_SECONDS)), 56)
@@ -1195,13 +1298,14 @@ func _show_greeting(on_finished: Callable) -> void:
 	tw.tween_method(func(left: float): countdown.text = str(ceili(left)), GREETING_SECONDS, 0.0, GREETING_SECONDS)
 	tw.tween_callback(on_finished)
 
-# --- Kod testowy: poprawny kod pozwala raz zmienic wydarzenie. Wyjscie z tych
-# okienek albo zmiana wydarzenia zuzywa kod, wiec nastepnym razem trzeba wpisac go znowu. ---
+# --- Kod testowy: poprawny kod pozwala raz zmienic wydarzenie, dodatek albo gre
+# edukacyjna. Wyjscie z tych okienek albo zmiana zuzywa kod, wiec nastepnym razem
+# trzeba wpisac go znowu. ---
 func _show_code_entry() -> void:
-	var panel := _open_popup(Vector2(620, 320), "Kod testowy")
+	var panel := _open_popup(Vector2(620, 320), Lang.t("test_code"))
 
 	var code_edit := LineEdit.new()
-	code_edit.placeholder_text = "Wpisz kod"
+	code_edit.placeholder_text = Lang.t("enter_code")
 	code_edit.position = Vector2(110, 86)
 	code_edit.size = Vector2(400, 56)
 	code_edit.add_theme_font_size_override("font_size", 26)
@@ -1214,12 +1318,12 @@ func _show_code_entry() -> void:
 	error_label.add_theme_color_override("font_color", Color(0.75, 0.2, 0.15))
 	panel.add_child(error_label)
 
-	var ok_btn := _popup_button("Sprawdz", OK_BTN_COLOR, Vector2((panel.size.x - 220) / 2.0, 206), Vector2(220, 70))
+	var ok_btn := _popup_button(Lang.t("check"), OK_BTN_COLOR, Vector2((panel.size.x - 220) / 2.0, 206), Vector2(220, 70))
 	ok_btn.pressed.connect(func():
 		if GameState.try_test_code(code_edit.text):
 			_show_event_switch()
 		else:
-			_update_code_entry(code_edit, error_label, ok_btn, "Niepoprawny kod."))
+			_update_code_entry(code_edit, error_label, ok_btn, Lang.t("wrong_code")))
 	panel.add_child(ok_btn)
 	_update_code_entry(code_edit, error_label, ok_btn, "")
 
@@ -1231,23 +1335,45 @@ func _update_code_entry(code_edit: LineEdit, error_label: Label, ok_btn: Button,
 	error_label.text = message
 	if lock_left > 0:
 		code_edit.text = ""
-		error_label.text = "Za duzo prob. Sprobuj za %d min." % ceili(lock_left / 60.0)
+		error_label.text = Lang.f("code_locked", [ceili(lock_left / 60.0)])
 
+# Lista do wyboru: wydarzenia tygodnia, dodatki i gry edukacyjne.
 func _show_event_switch() -> void:
-	var panel := _open_popup(Vector2(1080, 640), "Wybierz wydarzenie")
-	var columns := 3
-	var btn_size := Vector2(330, 90)
-	var gap := 14.0
-	var start_x := (panel.size.x - (columns * btn_size.x + (columns - 1) * gap)) / 2.0
-	for i in range(EventData.ROTATION.size()):
-		var event: Dictionary = EventData.ROTATION[i]
-		var pos := Vector2(start_x + (i % columns) * (btn_size.x + gap), 76 + int(i / float(columns)) * (btn_size.y + gap))
-		var btn := _popup_button(event["name"], CORNER_BTN_COLOR, pos, btn_size)
-		btn.add_theme_font_size_override("font_size", 22)
-		btn.disabled = i == GameState.event_index and not GameState.current_event().is_empty()
-		var event_idx := i
-		btn.pressed.connect(func(): _show_progress_choice(event_idx))
-		panel.add_child(btn)
+	var panel := _open_popup(Vector2(1080, 640), Lang.t("choose_event"))
+	var list := _scroll_list(panel, Vector2(30, 70), Vector2(panel.size.x - 60, panel.size.y - 90), 10)
+	var sections := [
+		[Lang.t("weekly_event"), EventData.ROTATION, "weekly"],
+		[Lang.t("addons"), AddonData.ADDONS, AddonData.KIND_ADDON],
+		[Lang.t("edu_games"), AddonData.EDU, AddonData.KIND_EDU],
+	]
+	for section in sections:
+		list.add_child(_popup_label(section[0], 24))
+		var flow := HFlowContainer.new()
+		flow.custom_minimum_size = Vector2(list.custom_minimum_size.x, 0)
+		flow.add_theme_constant_override("h_separation", 12)
+		flow.add_theme_constant_override("v_separation", 12)
+		flow.mouse_filter = Control.MOUSE_FILTER_PASS
+		list.add_child(flow)
+		var entries: Array = section[1]
+		var kind: String = section[2]
+		for i in range(entries.size()):
+			var entry: Dictionary = entries[i]
+			var title := Lang.t("event_" + entry["id"]) if kind == "weekly" else AddonData.title(entry)
+			var btn := _popup_button(title, CORNER_BTN_COLOR, Vector2.ZERO, Vector2(320, 70))
+			btn.custom_minimum_size = Vector2(320, 70)
+			btn.add_theme_font_size_override("font_size", 20)
+			btn.mouse_filter = Control.MOUSE_FILTER_PASS
+			var idx := i
+			if kind == "weekly":
+				btn.disabled = i == GameState.event_index and not GameState.current_event().is_empty()
+				btn.pressed.connect(func(): _show_progress_choice(idx))
+			else:
+				btn.disabled = int(GameState.rotations.get(kind, {}).get("index", 0)) == i
+				btn.pressed.connect(func():
+					GameState.switch_rotation(kind, idx)
+					GameState.rotation_view = kind
+					get_tree().change_scene_to_file("res://scenes/Rotation.tscn"))
+			flow.add_child(btn)
 
 # Postepy obecnego wydarzenia: gracz decyduje, czy maja zostac na pozniej.
 func _show_progress_choice(event_idx: int) -> void:
@@ -1256,18 +1382,17 @@ func _show_progress_choice(event_idx: int) -> void:
 		_finish_event_switch(event_idx, false)
 		return
 	var panel := _open_popup(Vector2(680, 340), "", false)
-	var question := _popup_label("Zapisac postepy z wydarzenia \"%s\"?" % current["name"], 28)
+	var question := _popup_label(Lang.f("keep_progress_question", [Lang.t("event_" + current["id"])]), 28)
 	question.position = Vector2(40, 40)
-	question.size = Vector2(panel.size.x - 80, 130)
 	question.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	question.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	UiIcons.wrap_label(question, Vector2(panel.size.x - 80, 130))
 	panel.add_child(question)
 
-	var drop_btn := _popup_button("Nie zapisuj", DELETE_BTN_COLOR, Vector2(50, 220), Vector2(270, 80))
+	var drop_btn := _popup_button(Lang.t("dont_save"), DELETE_BTN_COLOR, Vector2(50, 220), Vector2(270, 80))
 	drop_btn.pressed.connect(func(): _finish_event_switch(event_idx, false))
 	panel.add_child(drop_btn)
 
-	var keep_btn := _popup_button("Zapisz", OK_BTN_COLOR, Vector2(panel.size.x - 320, 220), Vector2(270, 80))
+	var keep_btn := _popup_button(Lang.t("save"), OK_BTN_COLOR, Vector2(panel.size.x - 320, 220), Vector2(270, 80))
 	keep_btn.pressed.connect(func(): _finish_event_switch(event_idx, true))
 	panel.add_child(keep_btn)
 
@@ -1276,31 +1401,29 @@ func _finish_event_switch(event_idx: int, keep_progress: bool) -> void:
 	get_tree().change_scene_to_file("res://scenes/Events.tscn")
 
 func _show_net_notice() -> void:
-	var panel := _open_popup(Vector2(640, 220), "Gra zespolowa")
+	var panel := _open_popup(Vector2(640, 220), Lang.t("multiplayer"))
 	var info := _popup_label(NetSession.notice, 22)
 	info.position = Vector2(40, 90)
-	info.size = Vector2(panel.size.x - 80, 90)
 	info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	UiIcons.wrap_label(info, Vector2(panel.size.x - 80, 90))
 	panel.add_child(info)
 	NetSession.notice = ""
 
 # "Czy na pewno?" przed usunieciem wybranego konta - postep znika na zawsze.
 func _show_delete_confirm() -> void:
-	var panel := _open_popup(Vector2(620, 320), "Usunac konto \"%s\"?" % GameState.player_name)
+	var panel := _open_popup(Vector2(620, 320), Lang.f("delete_account_question", [GameState.player_name]))
 
-	var warning := _popup_label("Caly postep tego konta (poziomy, rubiny, roslinki) zniknie na zawsze.", 20)
+	var warning := _popup_label(Lang.t("delete_account_warning"), 20)
 	warning.position = Vector2(40, 80)
-	warning.size = Vector2(panel.size.x - 80, 80)
 	warning.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	warning.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	UiIcons.wrap_label(warning, Vector2(panel.size.x - 80, 80))
 	panel.add_child(warning)
 
-	var keep_btn := _popup_button("ZOSTAW", OK_BTN_COLOR, Vector2(70, panel.size.y - 106), Vector2(210, 70))
+	var keep_btn := _popup_button(Lang.t("keep"), OK_BTN_COLOR, Vector2(70, panel.size.y - 106), Vector2(210, 70))
 	keep_btn.pressed.connect(_show_player_edit)
 	panel.add_child(keep_btn)
 
-	var delete_btn := _popup_button("USUN", DELETE_BTN_COLOR, Vector2(panel.size.x - 280, panel.size.y - 106), Vector2(210, 70))
+	var delete_btn := _popup_button(Lang.t("delete"), DELETE_BTN_COLOR, Vector2(panel.size.x - 280, panel.size.y - 106), Vector2(210, 70))
 	delete_btn.pressed.connect(func():
 		GameState.delete_profile(GameState.current_profile_id)
 		get_tree().change_scene_to_file("res://scenes/ProfileSelect.tscn"))

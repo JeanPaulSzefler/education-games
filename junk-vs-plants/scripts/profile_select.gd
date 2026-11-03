@@ -74,7 +74,7 @@ func _button(text: String, color: Color, pos: Vector2, btn_size: Vector2) -> But
 # --- Lista kont: karty z ikona i nazwa + karta "Nowe konto" ---
 func _show_profile_list() -> void:
 	_reset_content()
-	content.add_child(_label("Kliknij swoje konto", 28, Vector2(0, 150), VIEWPORT_WIDTH))
+	content.add_child(_label(Lang.t("pick_account"), 28, Vector2(0, 150), VIEWPORT_WIDTH))
 
 	var cards := GameState.profiles.size() + (1 if GameState.can_create_profile() else 0)
 	var start_x := (VIEWPORT_WIDTH - (cards * CARD_SIZE.x + (cards - 1) * CARD_GAP)) / 2.0
@@ -95,7 +95,7 @@ func _show_profile_list() -> void:
 		var x := start_x + GameState.profiles.size() * (CARD_SIZE.x + CARD_GAP)
 		var new_card := _card(Vector2(x, CARD_Y), NEW_CARD_COLOR)
 		new_card.add_child(_label("+", 80, Vector2(0, 20), CARD_SIZE.x))
-		new_card.add_child(_label("Nowe konto", 22, Vector2(0, 150), CARD_SIZE.x))
+		new_card.add_child(_label(Lang.t("new_account"), 22, Vector2(0, 150), CARD_SIZE.x))
 		new_card.pressed.connect(_show_create_form)
 
 func _card(pos: Vector2, color: Color) -> Button:
@@ -126,16 +126,16 @@ func _show_create_form() -> void:
 	panel.add_theme_stylebox_override("panel", sb)
 	content.add_child(panel)
 
-	var header := _label("Utworz konto", 34, Vector2(0, 16), panel.size.x)
+	var header := _label(Lang.t("create_account"), 34, Vector2(0, 16), panel.size.x)
 	header.add_theme_color_override("font_color", PANEL_TEXT_COLOR)
 	panel.add_child(header)
 
-	var name_caption := _label("Nazwa:", 22, Vector2(30, 98), 110)
+	var name_caption := _label(Lang.t("name_label"), 22, Vector2(30, 98), 110)
 	name_caption.add_theme_color_override("font_color", PANEL_TEXT_COLOR)
 	panel.add_child(name_caption)
 
 	var name_edit := LineEdit.new()
-	name_edit.placeholder_text = "Wpisz swoje imie"
+	name_edit.placeholder_text = Lang.t("enter_name")
 	name_edit.max_length = GameState.PLAYER_NAME_MAX_LENGTH
 	name_edit.position = Vector2(150, 92)
 	name_edit.size = Vector2(420, 54)
@@ -147,7 +147,7 @@ func _show_create_form() -> void:
 	error_label.add_theme_color_override("font_color", ERROR_COLOR)
 	panel.add_child(error_label)
 
-	var icon_caption := _label("Ikona:", 22, Vector2(30, 214), 110)
+	var icon_caption := _label(Lang.t("icon_label"), 22, Vector2(30, 214), 110)
 	icon_caption.add_theme_color_override("font_color", PANEL_TEXT_COLOR)
 	panel.add_child(icon_caption)
 
@@ -179,16 +179,16 @@ func _show_create_form() -> void:
 		x += 112.0
 
 	if not GameState.profiles.is_empty():
-		var back_btn := _button("Wroc", CARD_COLOR, Vector2(40, panel.size.y - 100), Vector2(220, 70))
+		var back_btn := _button(Lang.t("back"), CARD_COLOR, Vector2(40, panel.size.y - 100), Vector2(220, 70))
 		back_btn.pressed.connect(_show_profile_list)
 		panel.add_child(back_btn)
 
-	var create_btn := _button("Utworz konto", OK_BTN_COLOR, Vector2(panel.size.x - 280, panel.size.y - 100), Vector2(240, 70))
+	var create_btn := _button(Lang.t("create_account"), OK_BTN_COLOR, Vector2(panel.size.x - 280, panel.size.y - 100), Vector2(240, 70))
 	create_btn.pressed.connect(func():
 		if name_edit.text.strip_edges().is_empty():
-			error_label.text = "Wpisz nazwe konta."
+			error_label.text = Lang.t("enter_account_name")
 		elif GameState.is_profile_name_taken(name_edit.text):
-			error_label.text = "Konto o tej nazwie juz istnieje."
+			error_label.text = Lang.t("name_taken")
 		elif GameState.create_profile(name_edit.text, chosen["icon"]):
 			get_tree().change_scene_to_file("res://scenes/LevelSelect.tscn"))
 	panel.add_child(create_btn)

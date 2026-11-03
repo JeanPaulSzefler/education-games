@@ -16,10 +16,14 @@ extends Node
 const DISCOVERY_PORT := 47810
 const GAME_PORT := 47811
 # Podnosic przy kazdej zmianie protokolu - rozne wersje gry sie nie widza.
-const PROTOCOL_VERSION := 5
-# Po co sie laczymy: gra na planszy albo sadzenie razem (bez planszy).
+const PROTOCOL_VERSION := 6
+# Po co sie laczymy: wspolpraca na jednej planszy, rywalizacja (pojedynek, kazdy
+# na swojej planszy), sadzenie razem albo wymiana naklejek (bez planszy).
 const MODE_GAME := "game"
+const MODE_DUEL := "duel"
 const MODE_GARDEN := "garden"
+const MODE_ALBUM := "album"
+const MODES := [MODE_GAME, MODE_DUEL, MODE_GARDEN, MODE_ALBUM]
 const ANNOUNCE_INTERVAL := 1.0
 const PLAYER_TIMEOUT := 3.5
 const INVITE_RESEND_INTERVAL := 1.0
@@ -44,11 +48,16 @@ signal place_confirmed(plant_idx: int)
 signal game_over_received(won: bool, enemy_texture: String)
 signal garden_harvests_received(count: int)
 signal garden_gift_received
+signal duel_enemy_received(type_idx: int)
+signal duel_lost_received
+signal album_received(owned: Dictionary)
 
 # Trwa gra zespolowa (obaj gracze polaczeni).
 var active := false
 # Tryb zaproszen wysylanych z ekranu TeamPlay i tryb trwajacej sesji.
 var mode := MODE_GAME
+# Tryb wybrany juz poza ekranem gry z innym graczem (np. tydzien pojedynkow).
+var mode_chosen := false
 var is_host := false
 # Host: gosc jest juz na scenie gry i symulacja moze ruszyc.
 var guest_in_game := false
@@ -168,7 +177,7 @@ func _handle_packet(packet: Dictionary, ip: String) -> void:
 				invite_cancelled.emit()
 		"decline":
 			if not outgoing_invite.is_empty() and outgoing_invite["id"] == sender:
-				_abort_invite("Znajomy nie moze teraz zagrac.")
+				_abort_invite(Lang.t("mp_friend_busy"))
 
 func _on_hello(packet: Dictionary, sender: String, ip: String) -> void:
 	var icon = packet.get("icon")
@@ -230,7 +239,7 @@ func _abort_invite(reason: String) -> void:
 func _update_invites() -> void:
 	if not outgoing_invite.is_empty():
 		if clock >= outgoing_invite["deadline"]:
-			_abort_invite("Znajomy nie potwierdzil gry.")
+			_abort_invite(Lang.t("mp_friend_no_answer"))
 		elif clock >= outgoing_invite["next_send"]:
 			outgoing_invite["next_send"] = clock + INVITE_RESEND_INTERVAL
 			_send({"t": "invite", "name": GameState.player_name, "token": outgoing_invite["token"], "mode": mode}, outgoing_invite["ip"])
@@ -257,7 +266,7 @@ func _on_invite(packet: Dictionary, sender: String, ip: String) -> void:
 		_send({"t": "decline"}, ip)
 		return
 	var from_name := str(packet["name"]).left(GameState.PLAYER_NAME_MAX_LENGTH)
-	var invite_mode := MODE_GARDEN if packet.get("mode") == MODE_GARDEN else MODE_GAME
+	var invite_mode: String = packet.get("mode") if MODES.has(packet.get("mode")) else MODE_GAME
 	incoming_invite = {"id": sender, "name": from_name, "ip": ip, "token": token, "seen": clock, "mode": invite_mode}
 	invite_received.emit(from_name)
 
@@ -269,7 +278,7 @@ func accept_invite() -> void:
 	if enet.create_client(incoming_invite["ip"], GAME_PORT) != OK:
 		enet = null
 		incoming_invite = {}
-		invite_failed.emit("Nie udalo sie polaczyc ze znajomym.")
+		invite_failed.emit(Lang.t("mp_connect_failed"))
 		return
 	multiplayer.multiplayer_peer = enet
 
@@ -292,7 +301,7 @@ func _on_connected_to_server() -> void:
 func _on_connection_failed() -> void:
 	incoming_invite = {}
 	_close_peer()
-	invite_failed.emit("Nie udalo sie polaczyc ze znajomym.")
+	invite_failed.emit(Lang.t("mp_connect_failed"))
 
 func _on_peer_disconnected(id: int) -> void:
 	if active and id == guest_peer_id:
@@ -302,9 +311,9 @@ func _on_connection_lost() -> void:
 	if not active:
 		incoming_invite = {}
 		_close_peer()
-		invite_failed.emit("Nie udalo sie polaczyc ze znajomym.")
+		invite_failed.emit(Lang.t("mp_connect_failed"))
 		return
-	notice = "Polaczenie ze znajomym zostalo przerwane."
+	notice = Lang.t("mp_connection_lost")
 	end_session()
 	session_lost.emit()
 
@@ -348,7 +357,7 @@ func _rpc_join(token: String, guest_level: int, guest_fertilizer_limit: int) -> 
 		enet.disconnect_peer(sender)
 		return
 	guest_peer_id = sender
-	if mode == MODE_GARDEN:
+	if mode == MODE_GARDEN or mode == MODE_ALBUM:
 		_rpc_garden_welcome.rpc_id(sender)
 		_begin_session(true)
 		return
@@ -390,7 +399,53 @@ func _rpc_garden_gift() -> void:
 func _setup_team_game(difficulty: int, boss: int, fertilizer_limit: int) -> void:
 	GameState.current_level_index = difficulty
 	GameState.team_level = LevelData.team_level(difficulty, boss)
+	if mode == MODE_DUEL:
+		# Pojedynek trwa, az ktos przegra: fale tworzy main.gd jak w trybie nieskonczonym.
+		GameState.team_level["title_key"] = "duel_title"
+		GameState.team_level["boss"] = -1
 	team_fertilizer_limit = fertilizer_limit
+
+func incoming_mode() -> String:
+	return incoming_invite.get("mode", MODE_GAME)
+
+# --- Pojedynek: wrogowie dla znajomego i wiadomosc o przegranej ---
+func send_duel_enemy(type_idx: int) -> void:
+	_rpc_duel_enemy.rpc_id(_other_peer(), type_idx)
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_duel_enemy(type_idx: int) -> void:
+	if multiplayer.get_remote_sender_id() == _other_peer():
+		duel_enemy_received.emit(type_idx)
+
+func send_duel_lost() -> void:
+	if active:
+		_rpc_duel_lost.rpc_id(_other_peer())
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_duel_lost() -> void:
+	if multiplayer.get_remote_sender_id() == _other_peer():
+		duel_lost_received.emit()
+
+# --- Wymiana naklejek: kazdy wysyla swoj album, a obie strony licza te same
+# wymiany jeden na jeden (album_trades), wiec nic wiecej nie trzeba przesylac. ---
+func send_album(owned: Dictionary) -> void:
+	_rpc_album.rpc_id(_other_peer(), owned)
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_album(owned: Dictionary) -> void:
+	if multiplayer.get_remote_sender_id() == _other_peer():
+		album_received.emit(owned)
+
+# Pary [nasza powtorka, ktorej brakuje znajomemu; jego powtorka, ktorej brakuje nam].
+static func album_trades(mine: Dictionary, theirs: Dictionary) -> Array:
+	var give := mine.keys().filter(func(k): return int(mine[k]) > 1 and int(theirs.get(k, 0)) <= 0)
+	var take := theirs.keys().filter(func(k): return int(theirs[k]) > 1 and int(mine.get(k, 0)) <= 0)
+	give.sort()
+	take.sort()
+	var trades := []
+	for i in range(min(give.size(), take.size())):
+		trades.append([give[i], take[i]])
+	return trades
 
 # --- Start gry: czekamy, az obaj wybiora rosliny, a potem, az gosc wczyta plansze ---
 func mark_ready() -> void:

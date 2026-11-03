@@ -131,9 +131,26 @@ const TYPES := [
 		"description": "Sadzi sie je tylko na kupce smieci - od razu ja niszcza.",
 	},
 	{
-		"name": "Megakaktus", "recharge": 8.0, "cost": 75, "hp": 120, "role": "generator",
+		"name": "Megakaktus", "recharge": 8.0, "cost": 60, "hp": 120, "role": "generator",
 		"water_interval": 9.0, "water_value": 20, "water_drops": 2, "unlock_level": 57,
 		"texture": "res://assets/sprites/plants/mega_cactus.png",
 		"description": "Wiekszy kuzyn Kaktusa: daje po dwie krople wody naraz.",
 	},
 ]
+
+# Nazwa i opis rosliny w jezyku gracza (scripts/i18n/content.gd).
+static func name_of(plant_idx: int) -> String:
+	return Lang.t("plant_%d" % plant_idx)
+
+static func description_of(plant_idx: int) -> String:
+	return Lang.t("plant_%d_desc" % plant_idx)
+
+static func cactus_index() -> int:
+	return 1
+
+# Indeksy roslin w kolejnosci, w jakiej gracz je odblokowuje na sciezce.
+static func unlock_order() -> Array:
+	var order := range(TYPES.size())
+	order.sort_custom(func(a, b): return TYPES[a].get("unlock_level", 1) < TYPES[b].get("unlock_level", 1) \
+		or (TYPES[a].get("unlock_level", 1) == TYPES[b].get("unlock_level", 1) and a < b))
+	return order

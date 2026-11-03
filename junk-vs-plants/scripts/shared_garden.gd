@@ -20,7 +20,7 @@ func _ready() -> void:
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
 
-	add_child(_label("Sadzimy razem", 44, Vector2(0, 40)))
+	add_child(_label(Lang.t("plant_together"), 44, Vector2(0, 40)))
 	progress_label = _label("", 30, Vector2(0, 160))
 	add_child(progress_label)
 	saplings_label = _label("", 26, Vector2(0, 230))
@@ -32,7 +32,7 @@ func _ready() -> void:
 	gift_btn.pressed.connect(_on_gift_pressed)
 	add_child(gift_btn)
 
-	var back_btn := _button("Zakoncz", BACK_COLOR, Vector2(40, 620), Vector2(220, 70))
+	var back_btn := _button(Lang.t("finish"), BACK_COLOR, Vector2(40, 620), Vector2(220, 70))
 	back_btn.pressed.connect(_leave)
 	add_child(back_btn)
 
@@ -65,33 +65,33 @@ func _button(text: String, color: Color, pos: Vector2, btn_size: Vector2) -> But
 func _refresh() -> void:
 	var goal := EventData.SHARED_GOAL_HARVESTS
 	var total: int = min(GameState.shared_total_harvests(), goal)
-	progress_label.text = "Wspolny cel: %d / %d zebranych roslinek" % [total, goal]
-	saplings_label.text = "Twoje sadzonki: %d" % GameState.saplings
+	progress_label.text = Lang.f("shared_goal", [total, goal])
+	saplings_label.text = Lang.f("your_saplings", [GameState.saplings])
 	if GameState.is_free_gift_ready():
-		gift_btn.text = "Wyslij sadzonke za darmo"
+		gift_btn.text = Lang.t("gift_free")
 		gift_btn.disabled = false
 	elif GameState.shared_gift_credits > 0:
-		gift_btn.text = "Wyslij kupiona sadzonke (%d)" % GameState.shared_gift_credits
+		gift_btn.text = Lang.f("gift_bought", [GameState.shared_gift_credits])
 		gift_btn.disabled = false
 	else:
-		gift_btn.text = "Wyslij sadzonke za %d roslimonet" % EventData.GIFT_COST
+		gift_btn.text = Lang.f("gift_paid", [EventData.GIFT_COST])
 		gift_btn.disabled = GameState.plant_coins < EventData.GIFT_COST
 
 func _on_gift_pressed() -> void:
 	if GameState.pay_for_gift():
 		NetSession.send_garden_gift()
-		message_label.text = "Sadzonka wyslana do znajomego!"
+		message_label.text = Lang.t("gift_sent")
 		_refresh()
 
 func _on_gift_received() -> void:
 	GameState.receive_gift()
-	message_label.text = "Znajomy przyslal Ci sadzonke!"
+	message_label.text = Lang.t("gift_received")
 	_refresh()
 
 func _on_friend_harvests(count: int) -> void:
 	GameState.set_friend_harvests(count)
 	if GameState.try_pay_shared_goal():
-		message_label.text = "Wspolny cel zdobyty: +%d sadzonki dla kazdego!" % EventData.SHARED_REWARD_SAPLINGS
+		message_label.text = Lang.f("shared_goal_done", [EventData.SHARED_REWARD_SAPLINGS])
 	_refresh()
 
 func _leave() -> void:

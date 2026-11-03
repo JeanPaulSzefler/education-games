@@ -28,6 +28,9 @@ const MATCH_MOVE_TEXTURE := "res://assets/sprites/ui/match_move.png"
 const MATCH_CELL_TEXTURE := "res://assets/sprites/ui/match_cell.png"
 const MATCH_POP_TEXTURE := "res://assets/sprites/ui/match_pop.png"
 const RENT_SLOT_TEXTURE := "res://assets/sprites/ui/rent_slot.png"
+# Grafiki z GRAFIKI_PROMPTY_7.md.
+const UI_DIR := "res://assets/sprites/ui/"
+const BACKGROUND_TEXTURE := "res://assets/sprites/ui/background.png"
 # Etapy wzrostu roslinki w ogrodzie, od sadzonki do doroslej roslinki.
 const GARDEN_STAGE_TEXTURES := ["res://assets/sprites/ui/garden_stage_1.png", "res://assets/sprites/ui/garden_stage_2.png"]
 
@@ -394,6 +397,162 @@ static func rainbow_glow(size: Vector2) -> ColorRect:
 
 static func texture_from(path: String, size: float) -> TextureRect:
 	return _texture_icon(path, size)
+
+# Etykieta zawijajaca tekst w podanym rozmiarze. Rozmiar jest ustawiany
+# jeszcze raz po wejsciu do drzewa, bo zmiana czcionki czy rodzica potrafi
+# poszerzyc etykiete do dlugosci calego tekstu.
+static func wrap_label(label: Label, label_size: Vector2) -> void:
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.size = label_size
+	label.call_deferred("set_size", label_size)
+
+# Grafika assets/sprites/ui/<name>.png, gdy juz jest w grze; inaczej null.
+static func file_icon(name: String, size: float) -> TextureRect:
+	return _texture_icon(UI_DIR + name + ".png", size)
+
+static func _circle(c: Control, size: float, center: Vector2, radius: float, color: Color) -> void:
+	var points := []
+	for i in range(16):
+		points.append(center + Vector2.from_angle(TAU * i / 16.0) * radius)
+	_poly(c, size, points, color)
+
+# Tlo ekranow menu (wybrane w ankiecie); null, dopoki nie ma grafiki.
+static func background(screen_size: Vector2) -> TextureRect:
+	var icon := _texture_icon(BACKGROUND_TEXTURE, screen_size.x)
+	if icon != null:
+		icon.size = screen_size
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	return icon
+
+# Drzewko Zycia (dodatek Ochrona drzewka).
+static func tree(size: float) -> Control:
+	var file := file_icon("tree_of_life", size)
+	if file != null:
+		return file
+	var c := _box(size)
+	_poly(c, size, [Vector2(0.42, 0.95), Vector2(0.58, 0.95), Vector2(0.56, 0.55), Vector2(0.44, 0.55)], Color(0.5, 0.32, 0.15))
+	_circle(c, size, Vector2(0.5, 0.36), 0.32, Color(0.25, 0.65, 0.25))
+	_circle(c, size, Vector2(0.36, 0.42), 0.18, Color(0.3, 0.75, 0.3))
+	_circle(c, size, Vector2(0.64, 0.42), 0.18, Color(0.3, 0.75, 0.3))
+	_circle(c, size, Vector2(0.42, 0.3), 0.05, Color(1.0, 0.5, 0.6))
+	_circle(c, size, Vector2(0.6, 0.24), 0.05, Color(1.0, 0.5, 0.6))
+	return c
+
+# Klatka ze smieci (dodatek Uwolnij zwierzatka).
+static func cage(size: float) -> Control:
+	var file := file_icon("cage", size)
+	if file != null:
+		return file
+	var c := _box(size)
+	var bar := Color(0.45, 0.45, 0.5)
+	_poly(c, size, [Vector2(0.06, 0.1), Vector2(0.94, 0.1), Vector2(0.94, 0.2), Vector2(0.06, 0.2)], bar)
+	_poly(c, size, [Vector2(0.06, 0.86), Vector2(0.94, 0.86), Vector2(0.94, 0.96), Vector2(0.06, 0.96)], bar)
+	for x in [0.1, 0.32, 0.54, 0.76]:
+		_poly(c, size, [Vector2(x, 0.2), Vector2(x + 0.06, 0.2), Vector2(x + 0.06, 0.86), Vector2(x, 0.86)], bar)
+	return c
+
+# Zwierzatka z klatek: jez, ptaszek, zabka, motyl.
+static func animal(kind: String, size: float) -> Control:
+	var file := file_icon("animal_" + kind, size)
+	if file != null:
+		return file
+	var c := _box(size)
+	match kind:
+		"hedgehog":
+			_poly(c, size, [Vector2(0.1, 0.8), Vector2(0.2, 0.4), Vector2(0.35, 0.3), Vector2(0.5, 0.2), Vector2(0.65, 0.3), Vector2(0.8, 0.4), Vector2(0.9, 0.8)], Color(0.4, 0.28, 0.18))
+			_circle(c, size, Vector2(0.78, 0.66), 0.14, Color(0.85, 0.7, 0.5))
+		"bird":
+			_circle(c, size, Vector2(0.45, 0.55), 0.3, Color(0.35, 0.6, 0.95))
+			_poly(c, size, [Vector2(0.72, 0.5), Vector2(0.95, 0.56), Vector2(0.72, 0.62)], Color(1.0, 0.75, 0.2))
+		"frog":
+			_circle(c, size, Vector2(0.5, 0.62), 0.32, Color(0.3, 0.75, 0.3))
+			_circle(c, size, Vector2(0.32, 0.32), 0.12, Color(0.3, 0.75, 0.3))
+			_circle(c, size, Vector2(0.68, 0.32), 0.12, Color(0.3, 0.75, 0.3))
+		_:
+			_poly(c, size, [Vector2(0.5, 0.5), Vector2(0.1, 0.15), Vector2(0.05, 0.55)], Color(0.95, 0.5, 0.8))
+			_poly(c, size, [Vector2(0.5, 0.5), Vector2(0.9, 0.15), Vector2(0.95, 0.55)], Color(0.95, 0.5, 0.8))
+			_poly(c, size, [Vector2(0.5, 0.5), Vector2(0.2, 0.85), Vector2(0.42, 0.9)], Color(0.7, 0.4, 0.95))
+			_poly(c, size, [Vector2(0.5, 0.5), Vector2(0.8, 0.85), Vector2(0.58, 0.9)], Color(0.7, 0.4, 0.95))
+	return c
+
+# Nasionko (dodatek Zbieracz nasion).
+static func seed_icon(size: float) -> Control:
+	var file := file_icon("seed", size)
+	if file != null:
+		return file
+	var c := _box(size)
+	_poly(c, size, [Vector2(0.5, 0.08), Vector2(0.8, 0.45), Vector2(0.7, 0.85), Vector2(0.5, 0.95), Vector2(0.3, 0.85), Vector2(0.2, 0.45)], Color(0.65, 0.42, 0.18))
+	_poly(c, size, [Vector2(0.5, 0.2), Vector2(0.58, 0.45), Vector2(0.5, 0.8), Vector2(0.42, 0.45)], Color(0.8, 0.6, 0.3))
+	return c
+
+# Zebatka (ustawienia, jezyk).
+static func gear(size: float) -> Control:
+	var file := file_icon("settings_gear", size)
+	if file != null:
+		return file
+	var c := _box(size)
+	var color := Color(0.85, 0.85, 0.9)
+	for i in range(8):
+		var dir := Vector2.from_angle(TAU * i / 8.0)
+		var side := dir.orthogonal() * 0.08
+		_poly(c, size, [Vector2(0.5, 0.5) + dir * 0.2 - side, Vector2(0.5, 0.5) + dir * 0.46 - side, Vector2(0.5, 0.5) + dir * 0.46 + side, Vector2(0.5, 0.5) + dir * 0.2 + side], color)
+	_circle(c, size, Vector2(0.5, 0.5), 0.32, color)
+	_circle(c, size, Vector2(0.5, 0.5), 0.13, Color(0.3, 0.45, 0.25))
+	return c
+
+# Dodatki: prezent z kokarda.
+static func addon(size: float) -> Control:
+	var file := file_icon("addon_gift", size)
+	if file != null:
+		return file
+	var c := _box(size)
+	_poly(c, size, [Vector2(0.12, 0.4), Vector2(0.88, 0.4), Vector2(0.88, 0.92), Vector2(0.12, 0.92)], Color(0.9, 0.3, 0.45))
+	_poly(c, size, [Vector2(0.06, 0.28), Vector2(0.94, 0.28), Vector2(0.94, 0.42), Vector2(0.06, 0.42)], Color(0.95, 0.4, 0.55))
+	_poly(c, size, [Vector2(0.44, 0.28), Vector2(0.56, 0.28), Vector2(0.56, 0.92), Vector2(0.44, 0.92)], Color(0.98, 0.85, 0.2))
+	_poly(c, size, [Vector2(0.5, 0.28), Vector2(0.28, 0.08), Vector2(0.22, 0.24)], Color(0.98, 0.85, 0.2))
+	_poly(c, size, [Vector2(0.5, 0.28), Vector2(0.72, 0.08), Vector2(0.78, 0.24)], Color(0.98, 0.85, 0.2))
+	return c
+
+# Gry edukacyjne: kolorowe pojemniki na smieci.
+static func education(size: float) -> Control:
+	var file := file_icon("education_bins", size)
+	if file != null:
+		return file
+	var c := _box(size)
+	var colors := [Color(0.98, 0.85, 0.15), Color(0.2, 0.45, 0.95), Color(0.2, 0.7, 0.3)]
+	for i in range(3):
+		var x := 0.06 + i * 0.31
+		_poly(c, size, [Vector2(x, 0.3), Vector2(x + 0.26, 0.3), Vector2(x + 0.23, 0.9), Vector2(x + 0.03, 0.9)], colors[i])
+		_poly(c, size, [Vector2(x - 0.02, 0.22), Vector2(x + 0.28, 0.22), Vector2(x + 0.28, 0.3), Vector2(x - 0.02, 0.3)], colors[i].darkened(0.25))
+	return c
+
+# Gra z innym graczem: dwie roslinki (wspolpraca) albo roslinki naprzeciw (rywalizacja).
+static func multiplayer_icon(size: float, duel := false) -> Control:
+	var file := file_icon("mode_duel" if duel else "mode_coop", size)
+	if file != null:
+		return file
+	var c := _box(size)
+	var left := plant_icon(0, size * 0.55)
+	left.position = Vector2(0.02, 0.3) * size
+	c.add_child(left)
+	var right := plant_icon(1, size * 0.55)
+	right.position = Vector2(0.43, 0.3) * size
+	if duel:
+		right.flip_h = true
+		_poly(c, size, [Vector2(0.45, 0.05), Vector2(0.55, 0.05), Vector2(0.52, 0.3), Vector2(0.48, 0.3)], Color(0.95, 0.3, 0.25))
+	else:
+		_circle(c, size, Vector2(0.5, 0.15), 0.1, Color(0.95, 0.4, 0.5))
+	c.add_child(right)
+	return c
+
+# Strzalka przewodnika wskazujaca w dol.
+static func guide_arrow(size: float) -> Control:
+	var file := file_icon("guide_arrow", size)
+	if file != null:
+		return file
+	var c := _box(size)
+	_poly(c, size, [Vector2(0.35, 0.05), Vector2(0.65, 0.05), Vector2(0.65, 0.5), Vector2(0.88, 0.5), Vector2(0.5, 0.95), Vector2(0.12, 0.5), Vector2(0.35, 0.5)], Color(1.0, 0.85, 0.15))
+	return c
 
 # Klodka (ikonka rosliny, ktorej gracz jeszcze nie odblokowal).
 static func padlock(size: float) -> Control:

@@ -29,8 +29,8 @@ const TEAM_EARLY_BOSS_HP := 0.6
 
 # Plansze po Sercu Gory Smieci, dodane razem z Megakaktusem (poziomy 57-60).
 const EXTRA_BOARDS := [
-	{"name": "Krater Smieci", "from": 26, "extra": 2, "boss": -1, "cactus_water_multiplier": 1.62},
-	{"name": "Szczyt Gory Smieci", "from": 27, "extra": 2, "boss": 3, "boss_hp_multiplier": 2.4, "cactus_water_multiplier": 1.64},
+	{"name": "Krater Smieci", "place": 28, "from": 26, "extra": 2, "boss": -1, "cactus_water_multiplier": 1.62},
+	{"name": "Szczyt Gory Smieci", "place": 29, "from": 27, "extra": 2, "boss": 3, "boss_hp_multiplier": 2.4, "cactus_water_multiplier": 1.64},
 ]
 
 const BASE_LEVELS := [
@@ -467,16 +467,20 @@ static func _build_levels() -> Array:
 	var result := []
 	for i in range(boards.size()):
 		var base: Dictionary = boards[i]
-		var place: String = base["name"].get_slice(" - ", 1)
+		var place: int = base.get("place", i)
 		var first: Dictionary = base.duplicate(true)
-		first["name"] = "Poziom %d - %s" % [result.size() + 1, place]
+		first["number"] = result.size() + 1
+		first["place"] = place
+		first["part"] = 1
 		first["boss"] = -1
 		first.erase("boss_hp_multiplier")
 		if i > 0:
 			first["cactus_water_multiplier"] = (base["cactus_water_multiplier"] + boards[i - 1]["cactus_water_multiplier"]) / 2.0
 		result.append(first)
 		var second := _mirrored(base)
-		second["name"] = "Poziom %d - %s II" % [result.size() + 1, place]
+		second["number"] = result.size() + 1
+		second["place"] = place
+		second["part"] = 2
 		result.append(second)
 	result.append(endless)
 	return result
@@ -485,7 +489,7 @@ static func _build_levels() -> Array:
 # poza pierwsza (ta ma zawsze najwyzej 4 wrogow).
 static func _harder_board(extra: Dictionary) -> Dictionary:
 	var board: Dictionary = BASE_LEVELS[extra["from"]].duplicate(true)
-	board["name"] = "Poziom 0 - %s" % extra["name"]
+	board["place"] = extra["place"]
 	board["boss"] = extra["boss"]
 	board["cactus_water_multiplier"] = extra["cactus_water_multiplier"]
 	if extra.has("boss_hp_multiplier"):
@@ -518,9 +522,36 @@ static func fertilizer_count(level_idx: int) -> int:
 	return 2 if level_idx < 40 else 3
 
 # Plansza etapu wydarzenia: fale poziomu zmienione wedlug zasad wydarzenia.
-static func event_level(event: Dictionary, stage: int) -> Dictionary:
+# Nazwa poziomu w jezyku gracza: "Poziom 7 - Park II", "Mgla - etap 2"...
+static func title(level: Dictionary) -> String:
+	if level.get("endless", false):
+		return Lang.t("level_endless")
+	if level.has("title_key"):
+		var name := Lang.t(level["title_key"])
+		return Lang.f("stage_title", [name, level["stage"] + 1]) if level.has("stage") else name
+	var place := Lang.t("place_%d" % level.get("place", 0)) + (" II" if level.get("part", 1) == 2 else "")
+	return Lang.f("level_title", [level.get("number", 0), place])
+
+# Sama nazwa miejsca (napis pod kolkiem na sciezce).
+static func place_name(level: Dictionary) -> String:
+	if level.get("endless", false):
+		return Lang.t("level_endless_place")
+	return Lang.t("place_%d" % level.get("place", 0)) + (" II" if level.get("part", 1) == 2 else "")
+
+static func event_level(event: Dictionary, stage: int, title_key: String) -> Dictionary:
 	var level: Dictionary = LEVELS[EventData.STAGES[stage]["level_idx"]].duplicate(true)
-	level["name"] = "%s - etap %d" % [event["name"], stage + 1]
+	level["title_key"] = title_key
+	level["stage"] = stage
+	# Zagadka obronna: jedna fala z gotowej planszy, bez bossa i kupek.
+	if event.has("puzzle"):
+		level["boss"] = -1
+		level["junk_pile_waves"] = []
+		level["blocked_tiles"] = []
+		level["waves"] = [AddonData.PUZZLES[stage]["wave"].duplicate(true)]
+		return level
+	# Bez kupek smieci tam, gdzie zajmuja miejsce potrzebne zasadom dodatku.
+	if event.has("river_row") or event.has("animals") or event.has("tree"):
+		level["junk_pile_waves"] = []
 	if event.has("boss_rush"):
 		level["boss"] = -1
 		level["junk_pile_waves"] = []
@@ -557,7 +588,7 @@ static func _boss_rush_waves(count: int) -> Array:
 # Plansza gry zespolowej: trudnosc poziomu sredniego obu graczy, zawsze z bossem.
 static func team_level(difficulty_idx: int, boss_idx: int) -> Dictionary:
 	var level: Dictionary = LEVELS[difficulty_idx].duplicate(true)
-	level["name"] = "Gra zespolowa"
+	level["title_key"] = "team_game"
 	level["boss"] = boss_idx
 	if difficulty_idx < TEAM_FIRST_FULL_BOSS_LEVEL:
 		level["boss_hp_multiplier"] = TEAM_EARLY_BOSS_HP
