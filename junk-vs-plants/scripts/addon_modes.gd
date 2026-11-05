@@ -932,8 +932,10 @@ func _choose_giant(idx: int) -> void:
 	btn.add_child(icon)
 	var cost := Label.new()
 	cost.text = str(_giant_cost())
-	cost.position = Vector2(58, 14)
-	cost.add_theme_font_size_override("font_size", 20)
+	cost.position = Vector2(50, 17)
+	cost.size = Vector2(32, 24)
+	cost.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	cost.add_theme_font_size_override("font_size", 18)
 	btn.add_child(cost)
 	var cost_drop := TextureRect.new()
 	cost_drop.texture = load(m.WATER_DROP_TEXTURE)

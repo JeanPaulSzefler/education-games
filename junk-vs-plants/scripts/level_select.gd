@@ -1043,18 +1043,18 @@ func _show_shop() -> void:
 # nie jest teraz mozliwe; "on_buy" zwraca true po udanym zakupie.
 func _add_shop_row(list: VBoxContainer, text: String, price_text: String, price_icon: Control, enabled: bool, on_buy: Callable) -> void:
 	var row := Panel.new()
-	row.custom_minimum_size = Vector2(list.custom_minimum_size.x, 66)
+	row.custom_minimum_size = Vector2(list.custom_minimum_size.x, 74)
 	row.mouse_filter = Control.MOUSE_FILTER_PASS
 	row.add_theme_stylebox_override("panel", UiIcons.round_style(Color(1.0, 0.98, 0.92), 12))
 	list.add_child(row)
 
 	var label := _popup_label(text, 19)
 	label.position = Vector2(14, 0)
-	UiIcons.wrap_label(label, Vector2(row.custom_minimum_size.x - 360, 66))
+	UiIcons.wrap_label(label, Vector2(row.custom_minimum_size.x - 360, 74))
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	row.add_child(label)
 
-	var btn := _popup_button(price_text, OK_BTN_COLOR, Vector2(row.custom_minimum_size.x - 330, 8), Vector2(270, 50))
+	var btn := _popup_button(price_text, OK_BTN_COLOR, Vector2(row.custom_minimum_size.x - 330, 6), Vector2(270, 62))
 	btn.add_theme_font_size_override("font_size", 18)
 	btn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	btn.mouse_filter = Control.MOUSE_FILTER_PASS
@@ -1065,7 +1065,7 @@ func _add_shop_row(list: VBoxContainer, text: String, price_text: String, price_
 			coin_label.text = str(GameState.plant_coins)
 			_show_shop())
 	row.add_child(btn)
-	price_icon.position = Vector2(row.custom_minimum_size.x - 50, 15)
+	price_icon.position = Vector2(row.custom_minimum_size.x - 50, 19)
 	row.add_child(price_icon)
 
 func _list_note(list: VBoxContainer, text: String) -> void:

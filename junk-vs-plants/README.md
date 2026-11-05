@@ -116,4 +116,3 @@ Pliki `.apk` są śledzone przez Git, a `.gdignore` sprawia, że Godot pomija te
 ## Zapisane pomysły na później
 
 - Burza mózgów: nowe roślinki oraz nowe typy przeciwników
-- Gra z innym graczem (notatki 2026-11-03): mały podgląd ekranu drugiego gracza na dole ekranu. Zadanie 08 w `zadania/` (lista zadań dla ChatGPT: `zadania/README.md`).

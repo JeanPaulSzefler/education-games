@@ -8,9 +8,9 @@ const VIEWPORT_HEIGHT := 720
 const COLS := 10
 const ROWS := 5
 const CELL := 88
-# 1280 - COLS * CELL - 68: po prawej zostaje ten sam margines co dawniej na
-# wchodzacych wrogow.
-const GRID_LEFT := 332
+# 1280 - COLS * CELL - 4: wrogowie wchodza na plansze tuz przy prawej krawedzi
+# ekranu, a miedzy paskiem roslin (do x=326) i plansza miesci sie kolumna kosiarek.
+const GRID_LEFT := 396
 const GRID_TOP := 92
 const GRID_CENTER_X := GRID_LEFT + COLS * CELL / 2.0
 
@@ -180,6 +180,7 @@ const TEAM_SNAPSHOT_INTERVAL := 1.0 / 15.0
 const DUEL_VIEW_INTERVAL := 0.22
 const DUEL_VIEW_SCALE := 0.26
 const DUEL_VIEW_HEADER := 22.0
+const DUEL_VIEW_MAX_ENEMIES := 80
 const TEAM_VIEW_SMOOTHING := 20.0
 
 # --- Tryb nieskonczony: trudnosc rosnie z czasem przetrwanym przez gracza
@@ -1701,14 +1702,14 @@ func _update_enemies(delta: float) -> void:
 # potwierdzeniu kosiarka z tego rzedu dziala do konca tej gry: gdy smiec dojdzie
 # do domu, rusza, niszczy wszystko w rzedzie i znika. ---
 func _build_mowers() -> void:
-	if team or duel:
+	if team or duel or (event_game and AddonModes.is_needed(event_rules)):
 		return
 	for row in range(ROWS):
 		var btn := Button.new()
 		btn.flat = true
 		btn.focus_mode = Control.FOCUS_NONE
 		btn.size = Vector2(MOWER_SIZE + 6.0, CELL)
-		btn.position = Vector2(GRID_LEFT - MOWER_SIZE - 12.0, GRID_TOP + row * CELL)
+		btn.position = Vector2(GRID_LEFT - MOWER_SIZE - 6.0, GRID_TOP + row * CELL)
 		var icon := UiIcons.lawnmower(MOWER_SIZE - 10.0)
 		icon.position = Vector2(3, 6)
 		icon.modulate = MOWER_GHOST_COLOR
@@ -1729,7 +1730,7 @@ func _build_mowers() -> void:
 		btn.add_child(price)
 		btn.pressed.connect(_on_mower_pressed.bind(row))
 		add_child(btn)
-		mowers[row] = {"node": btn, "icon": icon, "price": price, "owned": false, "running": false}
+		mowers[row] = {"node": btn, "icon": icon, "price": price, "owned": false, "running": false, "hit": {}}
 
 func _on_mower_pressed(row: int) -> void:
 	if game_over or pause_layer != null or not mowers.has(row) or mowers[row]["owned"]:
@@ -1793,11 +1794,16 @@ func _update_mowers(delta: float) -> void:
 			continue
 		var node: Control = mower["node"]
 		node.position.x += MOWER_SPEED * delta
+		# Kazdy wrog i kazda kupka dostaja od kosiarki obrazenia tylko raz.
+		var hit: Dictionary = mower["hit"]
 		for e in enemies:
-			if e["row"] == row and e["x"] <= node.position.x + MOWER_SIZE and e["hp"] > 0:
+			if e["row"] == row and e["x"] <= node.position.x + MOWER_SIZE and not hit.has(e["id"]):
+				hit[e["id"]] = true
 				e["hp"] = e["hp"] - MOWER_DAMAGE if e["is_boss"] else 0
-		for pile in junk_piles.values():
-			if pile["row"] == row and _pile_x(pile) <= node.position.x + MOWER_SIZE and pile["hp"] > 0:
+		for pile in junk_piles.values().duplicate():
+			var pile_id := "p" + _cell_key(pile["col"], pile["row"])
+			if pile["row"] == row and _pile_x(pile) <= node.position.x + MOWER_SIZE and not hit.has(pile_id):
+				hit[pile_id] = true
 				_damage_pile(pile, MOWER_DAMAGE)
 		if node.position.x > GRID_LEFT + COLS * CELL:
 			node.queue_free()
@@ -2520,8 +2526,9 @@ func _rebuild_belt_preview() -> void:
 		child.queue_free()
 	var swap_note := Label.new()
 	swap_note.text = Lang.f("swap_for_coins", [event_rules["preview_swap_cost"]])
-	swap_note.position = Vector2(GRID_LEFT - 30, BELT_PREVIEW_Y)
-	swap_note.size = Vector2(135, BELT_PREVIEW_TILE)
+	swap_note.position = Vector2(GRID_LEFT + 110 + BELT_PREVIEW_SIZE * (BELT_PREVIEW_TILE + 10) + 6, BELT_PREVIEW_Y)
+	swap_note.size = Vector2(200, BELT_PREVIEW_TILE)
+	swap_note.visible = GameState.event_swap_credits <= 0
 	swap_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	swap_note.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	swap_note.add_theme_font_size_override("font_size", 15)
@@ -3088,6 +3095,7 @@ func _lose_game(reason := "") -> void:
 	if game_over:
 		return
 	game_over = true
+	_hide_duel_view()
 	if reason == "":
 		reason = Lang.t("lose_reason_house")
 	# Przegrana bez wroga w domu (czas, stracona roslina): ogolny smieciostwor.
@@ -3147,6 +3155,7 @@ func _win_game() -> void:
 	if game_over:
 		return
 	game_over = true
+	_hide_duel_view()
 	_hide_top_buttons()
 	message_label.text = Lang.t("win_message")
 	# Gra zespolowa nie posuwa sciezki: gosc moze grac na poziomie, ktorego
@@ -3234,7 +3243,7 @@ func _build_duel_view() -> void:
 	var board_size := Vector2(COLS * CELL, ROWS * CELL) * DUEL_VIEW_SCALE
 	duel_view = Control.new()
 	duel_view.size = board_size + Vector2(0, DUEL_VIEW_HEADER)
-	duel_view.position = Vector2(VIEWPORT_WIDTH - board_size.x - 10.0, VIEWPORT_HEIGHT - duel_view.size.y - 4.0)
+	duel_view.position = Vector2(GRID_LEFT + (COLS * CELL - board_size.x) / 2.0, VIEWPORT_HEIGHT - duel_view.size.y - 4.0)
 	duel_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(duel_view)
 	var frame := ColorRect.new()
@@ -3286,33 +3295,48 @@ func _update_duel_view(delta: float) -> void:
 func _on_duel_view(data: Dictionary) -> void:
 	if game_over or duel_view == null:
 		return
+	var plant_rows = data.get("p", [])
+	var enemy_rows = data.get("e", [])
+	if not (plant_rows is Array and enemy_rows is Array) or not _is_number(data.get("w", 0)):
+		return
 	duel_view.visible = true
-	duel_view_water.text = str(int(data.get("w", 0)))
+	duel_view_water.text = str(int(data["w"]))
 	for child in duel_view_units.get_children():
 		child.queue_free()
 	var cell := CELL * DUEL_VIEW_SCALE
 	var sprite_size := int(cell) - 2
-	var plant_rows = data.get("p", [])
-	var enemy_rows = data.get("e", [])
-	if not (plant_rows is Array and enemy_rows is Array):
-		return
-	for row in plant_rows:
-		if row is Array and row.size() >= 3 and int(row[0]) >= 0 and int(row[0]) < PLANT_TYPES.size():
-			var node := _make_sprite(PLANT_TYPES[int(row[0])]["texture"], sprite_size)
-			node.position = Vector2(int(row[1]), int(row[2])) * cell
-			duel_view_units.add_child(node)
-	for row in enemy_rows:
-		if row is Array and row.size() >= 3:
-			var kind := int(row[0])
-			var texture := ""
-			if kind < 0 and -1 - kind < BOSS_TYPES.size():
-				texture = BOSS_TYPES[-1 - kind]["texture"]
-			elif kind >= 0 and kind < ENEMY_TYPES.size():
-				texture = ENEMY_TYPES[kind]["texture"]
-			if texture != "":
-				var node := _make_sprite(texture, sprite_size)
-				node.position = Vector2(float(row[1]) * DUEL_VIEW_SCALE, int(row[2]) * cell)
-				duel_view_units.add_child(node)
+	# Pakiet od drugiego telefonu moze byc zepsuty: ograniczamy liczbe wpisow i
+	# sprawdzamy typy, zanim cokolwiek narysujemy.
+	for row in plant_rows.slice(0, COLS * ROWS):
+		if not _is_view_row(row) or int(row[0]) < 0 or int(row[0]) >= PLANT_TYPES.size():
+			continue
+		var node := _make_sprite(PLANT_TYPES[int(row[0])]["texture"], sprite_size)
+		node.position = Vector2(clampi(int(row[1]), 0, COLS - 1), clampi(int(row[2]), 0, ROWS - 1)) * cell
+		duel_view_units.add_child(node)
+	for row in enemy_rows.slice(0, DUEL_VIEW_MAX_ENEMIES):
+		if not _is_view_row(row):
+			continue
+		var kind := int(row[0])
+		var texture := ""
+		if kind < 0 and -1 - kind < BOSS_TYPES.size():
+			texture = BOSS_TYPES[-1 - kind]["texture"]
+		elif kind >= 0 and kind < ENEMY_TYPES.size():
+			texture = ENEMY_TYPES[kind]["texture"]
+		if texture == "":
+			continue
+		var node := _make_sprite(texture, sprite_size)
+		node.position = Vector2(clampf(float(row[1]), 0.0, COLS * CELL) * DUEL_VIEW_SCALE, clampi(int(row[2]), 0, ROWS - 1) * cell)
+		duel_view_units.add_child(node)
+
+func _hide_duel_view() -> void:
+	if duel_view != null:
+		duel_view.visible = false
+
+func _is_number(value: Variant) -> bool:
+	return value is int or value is float
+
+func _is_view_row(row: Variant) -> bool:
+	return row is Array and row.size() >= 3 and _is_number(row[0]) and _is_number(row[1]) and _is_number(row[2])
 
 func _duel_send_enemy() -> void:
 	if game_over:
