@@ -1092,9 +1092,6 @@ func _build_ruby_offers(list: VBoxContainer) -> void:
 			GameState.mark_ready_plots()
 			return bought)
 
-	_add_shop_row(list, Lang.f("shop_mower", [GameState.mowers]), Lang.f("buy_for_rubies", [GameState.MOWER_RUBIES]), UiIcons.ruby(36),
-		GameState.rubies >= GameState.MOWER_RUBIES, GameState.buy_mower)
-
 	_list_note(list, Lang.t("shop_upgrades_note"))
 	_list_note(list, Lang.f("shop_rent_note", [GameState.RENT_SLOT_RUBIES]))
 

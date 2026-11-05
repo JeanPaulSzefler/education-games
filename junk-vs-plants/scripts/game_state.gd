@@ -53,10 +53,9 @@ const MATCH_REFILL_MOVABLE := 8
 
 # Siodme miejsce w talii na jedna gre na sciezce, wypozyczane za rubiny.
 const RENT_SLOT_RUBIES := 3
-# Kosiarka (jak w Plants vs Zombies): komplet 5 kosiarek, po jednej w kazdym rzedzie.
-# Gdy smiec dojdzie do domu, kosiarka przejezdza rzad i niszczy wszystko. Komplet
-# zuzywa sie dopiero, gdy ktorakolwiek kosiarka ruszy.
-const MOWER_RUBIES := 20
+# Kosiarka (jak w Plants vs Zombies): kupuje sie ja w trakcie poziomu, osobno dla
+# kazdego rzedu, i dziala tylko do konca tej gry.
+const MOWER_RUBIES := 5
 
 # Kod testowy pozwala raz zmienic wydarzenie. W kodzie gry jest tylko jego skrot.
 const TEST_CODE_SHA256 := "e0277cd898e021d443fe6817322b8f98623cb9a0a366e5daa39e03c47bf79959"
@@ -133,7 +132,6 @@ var plant_coins := 0
 # Otwarte skrzynie: numery poziomow, przed ktorymi stoja na sciezce.
 var opened_chests: Array = []
 var fertilizer_limit := FERTILIZER_START_LIMIT
-var mowers := 0
 # Ulepszenia roslin: String(indeks rosliny) -> poziom.
 var plant_upgrades: Dictionary = {}
 # Dzien (Unix), w ktorym gracz ostatnio wzial rubiny z oferty "za reklame".
@@ -266,7 +264,6 @@ func _reset_progress() -> void:
 	plant_coins = 0
 	opened_chests = []
 	fertilizer_limit = FERTILIZER_START_LIMIT
-	mowers = 0
 	plant_upgrades = {}
 	ad_offer_day = 0
 	match_moves = 0
@@ -1368,15 +1365,9 @@ func buy_mower() -> bool:
 	if rubies < MOWER_RUBIES:
 		return false
 	rubies -= MOWER_RUBIES
-	mowers += 1
 	record_bingo("chest_or_shop")
 	save_progress()
 	return true
-
-func use_mower_set() -> void:
-	if mowers > 0:
-		mowers -= 1
-		save_progress()
 
 func buy_fertilizer_limit() -> bool:
 	var price := next_fertilizer_limit_price()
@@ -1504,7 +1495,6 @@ func save_progress() -> void:
 		"plant_coins": plant_coins,
 		"opened_chests": opened_chests,
 		"fertilizer_limit": fertilizer_limit,
-		"mowers": mowers,
 		"plant_upgrades": plant_upgrades,
 		"ad_offer_day": ad_offer_day,
 		"match_moves": match_moves,
@@ -1625,8 +1615,6 @@ func _load_v3_fields(parsed: Dictionary) -> void:
 	var loaded_limit = parsed.get("fertilizer_limit", FERTILIZER_START_LIMIT)
 	if typeof(loaded_limit) == TYPE_FLOAT or typeof(loaded_limit) == TYPE_INT:
 		fertilizer_limit = clampi(int(loaded_limit), FERTILIZER_START_LIMIT, FERTILIZER_START_LIMIT + FERTILIZER_LIMIT_PRICES.size())
-
-	mowers = _loaded_int(parsed, "mowers")
 
 	saplings = _loaded_int(parsed, "saplings")
 	next_bee_time = _loaded_int(parsed, "next_bee_time")

@@ -245,13 +245,12 @@ var fertilizer_drops := []
 var selected_plant_type := -1
 var game_over := false
 
-# Kosiarki (kupowane za rubiny): rzad -> {"node", "running"}. Komplet zuzywa sie
-# przy pierwszej, ktora ruszy.
+# Kosiarki (kupowane za rubiny w trakcie poziomu): rzad -> {"node", "icon", "price", "owned", "running"}.
 const MOWER_SPEED := 520.0
 const MOWER_DAMAGE := 1000
 const MOWER_SIZE := 70.0
+const MOWER_GHOST_COLOR := Color(0.2, 0.2, 0.2, 0.55)
 var mowers := {}
-var mower_set_used := false
 var water_count_label: Label
 var wave_label: Label
 var message_label: Label
@@ -1698,26 +1697,93 @@ func _update_enemies(delta: float) -> void:
 	if reached_house:
 		_lose_game()
 
-# --- Kosiarki: gdy smiec dojdzie do domu, kosiarka z tego rzedu rusza,
-# niszczy wszystko po drodze i znika (raz na poziom, jak w PvZ). ---
+# --- Kosiarki (jak w PvZ): w kazdym rzedzie stoi zarys kosiarki z cena. Po
+# potwierdzeniu kosiarka z tego rzedu dziala do konca tej gry: gdy smiec dojdzie
+# do domu, rusza, niszczy wszystko w rzedzie i znika. ---
 func _build_mowers() -> void:
-	if GameState.mowers <= 0 or team or duel:
+	if team or duel:
 		return
 	for row in range(ROWS):
-		var node := UiIcons.lawnmower(MOWER_SIZE)
-		node.position = Vector2(GRID_LEFT - MOWER_SIZE - 6.0, GRID_TOP + row * CELL + (CELL - MOWER_SIZE) / 2.0)
-		add_child(node)
-		mowers[row] = {"node": node, "running": false}
+		var btn := Button.new()
+		btn.flat = true
+		btn.focus_mode = Control.FOCUS_NONE
+		btn.size = Vector2(MOWER_SIZE + 6.0, CELL)
+		btn.position = Vector2(GRID_LEFT - MOWER_SIZE - 12.0, GRID_TOP + row * CELL)
+		var icon := UiIcons.lawnmower(MOWER_SIZE - 10.0)
+		icon.position = Vector2(3, 6)
+		icon.modulate = MOWER_GHOST_COLOR
+		btn.add_child(icon)
+		var price := Control.new()
+		price.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var ruby := UiIcons.ruby(18)
+		ruby.position = Vector2(2, CELL - 28.0)
+		price.add_child(ruby)
+		var price_label := Label.new()
+		price_label.text = str(GameState.MOWER_RUBIES)
+		price_label.position = Vector2(22, CELL - 32.0)
+		price_label.add_theme_font_size_override("font_size", 18)
+		price_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+		price_label.add_theme_constant_override("outline_size", 5)
+		price_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		price.add_child(price_label)
+		btn.add_child(price)
+		btn.pressed.connect(_on_mower_pressed.bind(row))
+		add_child(btn)
+		mowers[row] = {"node": btn, "icon": icon, "price": price, "owned": false, "running": false}
 
-# Prawda, gdy kosiarka z tego rzedu stoi albo wlasnie jedzie: dom jest bezpieczny.
+func _on_mower_pressed(row: int) -> void:
+	if game_over or pause_layer != null or not mowers.has(row) or mowers[row]["owned"]:
+		return
+	if GameState.rubies < GameState.MOWER_RUBIES:
+		message_label.text = Lang.t("mower_no_rubies")
+		return
+	var layer := _open_pause_layer(Color(0, 0, 0, 0.55))
+	var panel := Panel.new()
+	panel.size = Vector2(560, 280)
+	panel.position = (Vector2(VIEWPORT_WIDTH, VIEWPORT_HEIGHT) - panel.size) / 2.0
+	var panel_sb := StyleBoxFlat.new()
+	panel_sb.bg_color = Color(0.95, 0.93, 0.85)
+	panel_sb.set_border_width_all(5)
+	panel_sb.border_color = Color(0.25, 0.2, 0.15)
+	panel_sb.set_corner_radius_all(18)
+	panel.add_theme_stylebox_override("panel", panel_sb)
+	layer.add_child(panel)
+	var question := Label.new()
+	question.text = Lang.t("mower_confirm")
+	question.add_theme_font_size_override("font_size", 26)
+	question.add_theme_color_override("font_color", Color(0.15, 0.12, 0.1))
+	question.position = Vector2(30, 30)
+	question.size = Vector2(panel.size.x - 60, 110)
+	question.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	question.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	panel.add_child(question)
+	var no_btn := _make_dialog_button(Lang.t("cancel"), LEAVE_BTN_COLOR, Vector2(30, 170))
+	no_btn.size = Vector2(230, 80)
+	no_btn.pressed.connect(_close_pause_layer)
+	panel.add_child(no_btn)
+	var buy_btn := _make_dialog_button(Lang.f("buy_for_rubies", [GameState.MOWER_RUBIES]), STAY_BTN_COLOR, Vector2(300, 170))
+	buy_btn.size = Vector2(230, 80)
+	buy_btn.add_theme_font_size_override("font_size", 20)
+	buy_btn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	buy_btn.pressed.connect(func():
+		_close_pause_layer()
+		_buy_mower(row))
+	panel.add_child(buy_btn)
+
+func _buy_mower(row: int) -> void:
+	if not mowers.has(row) or mowers[row]["owned"] or not GameState.buy_mower():
+		return
+	var mower: Dictionary = mowers[row]
+	mower["owned"] = true
+	mower["icon"].modulate = Color(1, 1, 1)
+	mower["price"].visible = false
+	mower["node"].mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+# Prawda, gdy kupiona kosiarka z tego rzedu stoi albo wlasnie jedzie: dom jest bezpieczny.
 func _mower_saves_row(row: int) -> bool:
-	if not mowers.has(row):
+	if not mowers.has(row) or not mowers[row]["owned"]:
 		return false
-	if not mowers[row]["running"]:
-		mowers[row]["running"] = true
-		if not mower_set_used:
-			mower_set_used = true
-			GameState.use_mower_set()
+	mowers[row]["running"] = true
 	return true
 
 func _update_mowers(delta: float) -> void:
