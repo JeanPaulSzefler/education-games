@@ -8,4 +8,4 @@ Każde zadanie ma numer, własny plik w tym folderze i status: `NIEZREALIZOWANE`
 | 06 | Grafiki, część 6 | `../GRAFIKI_PROMPTY_6.md` | ZREALIZOWANE (2026-11-01) |
 | 07 | Grafiki, część 7 (tła, dodatki, gry edukacyjne, śmieci) | `ZADANIE_07_GRAFIKI.md` | ZREALIZOWANE (2026-11-03) |
 | 08 | Podgląd ekranu drugiego gracza | `ZADANIE_08_PODGLAD_EKRANU_ZNAJOMEGO.md` | ZREALIZOWANE (2026-11-05, bez testu na dwóch telefonach) |
-| 09 | Grafiki, część 8 (tła planszy i gier edukacyjnych, kosiarka) | `ZADANIE_09_GRAFIKI_8.md` | NIEZREALIZOWANE |
+| 09 | Grafiki, część 8 (tła planszy i gier edukacyjnych, kosiarka) | `ZADANIE_09_GRAFIKI_8.md` | ZREALIZOWANE (2026-11-05) |

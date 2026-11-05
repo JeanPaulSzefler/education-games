@@ -1,6 +1,6 @@
 # Zadanie 09: grafiki do gry Junk vs Plants (część 8)
 
-**Status: NIEZREALIZOWANE**
+**Status: ZREALIZOWANE (2026-11-05)**
 
 ## Cel
 
@@ -43,7 +43,16 @@ Commit: `Add backyard and leaf backgrounds and the lawn mower`.
 
 ## Lista kontrolna przed commitem
 
-- [ ] Pliki są dokładnie pod ścieżkami i nazwami z tabeli.
-- [ ] Tła mają dokładnie 1280x720 px, kosiarka najwyżej 512 px na dłuższym boku.
-- [ ] Na żadnej grafice nie ma tekstu ani znaku wodnego.
-- [ ] `git status` pokazuje tylko te 3 pliki.
+- [x] Pliki są dokładnie pod ścieżkami i nazwami z tabeli.
+- [x] Tła mają dokładnie 1280x720 px, kosiarka najwyżej 512 px na dłuższym boku.
+- [x] Na żadnej grafice nie ma tekstu ani znaku wodnego.
+- [x] Przed aktualizacją statusów `git status` pokazywał tylko te 3 pliki.
+
+## Wynik
+
+Dodano oba tła jako PNG RGB 1280x720 oraz kosiarkę jako PNG RGBA 512x425,
+przyciętą do treści. Godot 4.6.3 potwierdził użycie obu teł i tekstury pięciu
+kosiarek na planszy oraz uruchomienie kosiarki. Przeszedł również test profilu,
+12 scen, sadzenia rośliny i pojawiania się przeciwników. Kod gry i istniejące
+grafiki pozostały bez zmian. Eksportu APK nie testowano; import nadal zgłasza
+znaną niezgodność `preset.0/runnable` z dostępną wersją Godota.
