@@ -53,6 +53,10 @@ const MATCH_REFILL_MOVABLE := 8
 
 # Siodme miejsce w talii na jedna gre na sciezce, wypozyczane za rubiny.
 const RENT_SLOT_RUBIES := 3
+# Kosiarka (jak w Plants vs Zombies): komplet 5 kosiarek, po jednej w kazdym rzedzie.
+# Gdy smiec dojdzie do domu, kosiarka przejezdza rzad i niszczy wszystko. Komplet
+# zuzywa sie dopiero, gdy ktorakolwiek kosiarka ruszy.
+const MOWER_RUBIES := 20
 
 # Kod testowy pozwala raz zmienic wydarzenie. W kodzie gry jest tylko jego skrot.
 const TEST_CODE_SHA256 := "e0277cd898e021d443fe6817322b8f98623cb9a0a366e5daa39e03c47bf79959"
@@ -66,6 +70,10 @@ const GARDEN_PLOTS := 8
 const GARDEN_GROW_SECONDS := 15 * 3600
 const GARDEN_HARVEST_COINS := 50
 const GARDEN_HARVEST_MOVES := 1
+# Roslinki odblokowane od tego poziomu daja czasem 2 ruchy zamiast jednego.
+const GARDEN_BONUS_MIN_LEVEL := 20
+const GARDEN_BONUS_CHANCE := 0.35
+const GARDEN_DEFAULT_PLANT := 3
 const GARDEN_RUSH_RUBIES := 15
 const GARDEN_BEE_SECONDS := 3 * 3600
 const BEE_RETURN_MIN_SECONDS := 15 * 60
@@ -125,6 +133,7 @@ var plant_coins := 0
 # Otwarte skrzynie: numery poziomow, przed ktorymi stoja na sciezce.
 var opened_chests: Array = []
 var fertilizer_limit := FERTILIZER_START_LIMIT
+var mowers := 0
 # Ulepszenia roslin: String(indeks rosliny) -> poziom.
 var plant_upgrades: Dictionary = {}
 # Dzien (Unix), w ktorym gracz ostatnio wzial rubiny z oferty "za reklame".
@@ -257,6 +266,7 @@ func _reset_progress() -> void:
 	plant_coins = 0
 	opened_chests = []
 	fertilizer_limit = FERTILIZER_START_LIMIT
+	mowers = 0
 	plant_upgrades = {}
 	ad_offer_day = 0
 	match_moves = 0
@@ -265,7 +275,7 @@ func _reset_progress() -> void:
 	saplings = 0
 	garden_plots = []
 	for i in range(GARDEN_PLOTS):
-		garden_plots.append({"state": PLOT_EMPTY, "end": 0})
+		garden_plots.append(empty_plot())
 	next_bee_time = 0
 	event_index = 0
 	event_started = 0
@@ -1178,10 +1188,25 @@ func try_pay_shared_goal() -> bool:
 	return true
 
 # --- Ogrod ---
+func empty_plot() -> Dictionary:
+	return {"state": PLOT_EMPTY, "end": 0, "plant": GARDEN_DEFAULT_PLANT, "moves": GARDEN_HARVEST_MOVES}
+
+# Sadzonka wyrasta na losowa z odblokowanych roslin; te z pozniejszych poziomow
+# daja czasem 2 ruchy do Roslinnych trojek.
+func _roll_plot_plant(i: int) -> void:
+	var unlocked := unlocked_plant_indices()
+	var p_idx: int = unlocked[randi() % unlocked.size()] if not unlocked.is_empty() else GARDEN_DEFAULT_PLANT
+	var moves := GARDEN_HARVEST_MOVES
+	if PlantData.TYPES[p_idx].get("unlock_level", 1) >= GARDEN_BONUS_MIN_LEVEL and randf() < GARDEN_BONUS_CHANCE:
+		moves = 2
+	garden_plots[i]["plant"] = p_idx
+	garden_plots[i]["moves"] = moves
+
 func plant_sapling(i: int) -> void:
 	if saplings > 0 and garden_plots[i]["state"] == PLOT_EMPTY:
 		saplings -= 1
 		garden_plots[i]["state"] = PLOT_SAPLING
+		_roll_plot_plant(i)
 		save_progress()
 
 func water_plot(i: int) -> void:
@@ -1237,9 +1262,10 @@ func mark_ready_plots() -> Array:
 func collect_plot(i: int) -> bool:
 	if garden_plots[i]["state"] != PLOT_READY:
 		return false
-	garden_plots[i] = {"state": PLOT_EMPTY, "end": 0}
+	var moves: int = garden_plots[i].get("moves", GARDEN_HARVEST_MOVES)
+	garden_plots[i] = empty_plot()
 	plant_coins += GARDEN_HARVEST_COINS
-	match_moves += GARDEN_HARVEST_MOVES
+	match_moves += moves
 	if is_shared_garden_on():
 		shared_my_harvests += 1
 	record_bingo("garden_collect")
@@ -1337,6 +1363,20 @@ func _weighted_pick(weights: Dictionary) -> int:
 func next_fertilizer_limit_price() -> int:
 	var bought := fertilizer_limit - FERTILIZER_START_LIMIT
 	return FERTILIZER_LIMIT_PRICES[bought] if bought < FERTILIZER_LIMIT_PRICES.size() else -1
+
+func buy_mower() -> bool:
+	if rubies < MOWER_RUBIES:
+		return false
+	rubies -= MOWER_RUBIES
+	mowers += 1
+	record_bingo("chest_or_shop")
+	save_progress()
+	return true
+
+func use_mower_set() -> void:
+	if mowers > 0:
+		mowers -= 1
+		save_progress()
 
 func buy_fertilizer_limit() -> bool:
 	var price := next_fertilizer_limit_price()
@@ -1464,6 +1504,7 @@ func save_progress() -> void:
 		"plant_coins": plant_coins,
 		"opened_chests": opened_chests,
 		"fertilizer_limit": fertilizer_limit,
+		"mowers": mowers,
 		"plant_upgrades": plant_upgrades,
 		"ad_offer_day": ad_offer_day,
 		"match_moves": match_moves,
@@ -1585,6 +1626,8 @@ func _load_v3_fields(parsed: Dictionary) -> void:
 	if typeof(loaded_limit) == TYPE_FLOAT or typeof(loaded_limit) == TYPE_INT:
 		fertilizer_limit = clampi(int(loaded_limit), FERTILIZER_START_LIMIT, FERTILIZER_START_LIMIT + FERTILIZER_LIMIT_PRICES.size())
 
+	mowers = _loaded_int(parsed, "mowers")
+
 	saplings = _loaded_int(parsed, "saplings")
 	next_bee_time = _loaded_int(parsed, "next_bee_time")
 	event_index = _loaded_int(parsed, "event_index")
@@ -1640,7 +1683,10 @@ func _load_v3_fields(parsed: Dictionary) -> void:
 		for i in range(min(loaded_plots.size(), GARDEN_PLOTS)):
 			var plot = loaded_plots[i]
 			if plot is Dictionary and [PLOT_EMPTY, PLOT_SAPLING, PLOT_GROWING, PLOT_READY].has(plot.get("state")):
-				garden_plots[i] = {"state": plot["state"], "end": int(plot.get("end", 0))}
+				var saved_plant := int(plot.get("plant", GARDEN_DEFAULT_PLANT))
+				if saved_plant < 0 or saved_plant >= PlantData.TYPES.size():
+					saved_plant = GARDEN_DEFAULT_PLANT
+				garden_plots[i] = {"state": plot["state"], "end": int(plot.get("end", 0)), "plant": saved_plant, "moves": clampi(int(plot.get("moves", GARDEN_HARVEST_MOVES)), 1, 2)}
 
 	var loaded_chests = parsed.get("opened_chests", [])
 	if loaded_chests is Array:

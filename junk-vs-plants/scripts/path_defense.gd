@@ -65,11 +65,7 @@ func _ready() -> void:
 	stones += stage
 	to_spawn = 8 + 4 * stage
 
-	var bg := ColorRect.new()
-	bg.color = Color(0.2, 0.32, 0.18)
-	bg.size = Vector2(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(bg)
+	add_child(UiIcons.screen_background("yard"))
 	var title := Label.new()
 	title.text = Lang.f("stage_title", [Lang.t("addon_path_build"), stage + 1])
 	title.position = Vector2(ORIGIN.x, 10)

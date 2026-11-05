@@ -23,11 +23,7 @@ const SELECTED_ICON_BORDER := Color(0.95, 0.75, 0.1)
 var content: Control
 
 func _ready() -> void:
-	var bg := ColorRect.new()
-	bg.color = Color(0.15, 0.25, 0.15)
-	bg.size = Vector2(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(bg)
+	add_child(UiIcons.screen_background("menu"))
 
 	var title := Label.new()
 	title.text = "Junk vs Plants"

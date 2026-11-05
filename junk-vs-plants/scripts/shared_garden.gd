@@ -14,11 +14,7 @@ var saplings_label: Label
 var gift_btn: Button
 
 func _ready() -> void:
-	var bg := ColorRect.new()
-	bg.color = Color(0.2, 0.36, 0.18)
-	bg.size = Vector2(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(bg)
+	add_child(UiIcons.screen_background("garden"))
 
 	add_child(_label(Lang.t("plant_together"), 44, Vector2(0, 40)))
 	progress_label = _label("", 30, Vector2(0, 160))

@@ -74,15 +74,7 @@ var drag_total := 0.0
 
 func _ready() -> void:
 	GameState.clear_event_game()
-	var bg := ColorRect.new()
-	bg.color = Color(0.15, 0.25, 0.15)
-	bg.position = Vector2(0, 0)
-	bg.size = Vector2(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(bg)
-	var picture := UiIcons.background(Vector2(VIEWPORT_WIDTH, VIEWPORT_HEIGHT))
-	if picture != null:
-		add_child(picture)
+	add_child(UiIcons.screen_background("menu"))
 
 	var title := Label.new()
 	title.text = "Junk vs Plants"
@@ -973,14 +965,16 @@ func _build_plant_upgrade(panel: Panel, plant_idx: int) -> void:
 	var bonus := (GameState.plant_power(plant_idx) - 1.0) * 100.0
 	var info := _popup_label(Lang.f("upgrade_info", [bonus, effect, GameState.rubies]), 20)
 	info.position = Vector2(316, 526)
-	UiIcons.wrap_label(info, Vector2(panel.size.x - 316 - 310, 70))
+	UiIcons.wrap_label(info, Vector2(panel.size.x - 316 - 350, 70))
 	info.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	panel.add_child(info)
 
 	var price := GameState.plant_upgrade_price(plant_idx)
 	var buy_text := Lang.t("maximum") if price < 0 else Lang.f("upgrade_buy", [price])
-	var buy_btn := _popup_button(buy_text, OK_BTN_COLOR, Vector2(panel.size.x - 290, 526), Vector2(210, 70))
+	var buy_btn := _popup_button(buy_text, OK_BTN_COLOR, Vector2(panel.size.x - 330, 526), Vector2(250, 70))
 	buy_btn.disabled = price < 0 or GameState.rubies < price
+	buy_btn.add_theme_font_size_override("font_size", 20)
+	buy_btn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	buy_btn.pressed.connect(func():
 		if GameState.buy_plant_upgrade(plant_idx):
 			ruby_label.text = str(GameState.rubies)
@@ -1056,12 +1050,13 @@ func _add_shop_row(list: VBoxContainer, text: String, price_text: String, price_
 
 	var label := _popup_label(text, 19)
 	label.position = Vector2(14, 0)
-	UiIcons.wrap_label(label, Vector2(row.custom_minimum_size.x - 270, 66))
+	UiIcons.wrap_label(label, Vector2(row.custom_minimum_size.x - 360, 66))
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	row.add_child(label)
 
-	var btn := _popup_button(price_text, OK_BTN_COLOR, Vector2(row.custom_minimum_size.x - 240, 8), Vector2(180, 50))
-	btn.add_theme_font_size_override("font_size", 20)
+	var btn := _popup_button(price_text, OK_BTN_COLOR, Vector2(row.custom_minimum_size.x - 330, 8), Vector2(270, 50))
+	btn.add_theme_font_size_override("font_size", 18)
+	btn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	btn.mouse_filter = Control.MOUSE_FILTER_PASS
 	btn.disabled = not enabled
 	btn.pressed.connect(func():
@@ -1085,17 +1080,20 @@ func _build_ruby_offers(list: VBoxContainer) -> void:
 	if limit_price < 0:
 		_add_shop_row(list, Lang.f("shop_fertilizer_max", [GameState.fertilizer_limit]), Lang.t("maximum"), UiIcons.ruby(36), false, func(): return false)
 	else:
-		_add_shop_row(list, Lang.f("shop_fertilizer", [GameState.fertilizer_limit]), Lang.f("buy_for", [limit_price]), UiIcons.ruby(36),
+		_add_shop_row(list, Lang.f("shop_fertilizer", [GameState.fertilizer_limit]), Lang.f("buy_for_rubies", [limit_price]), UiIcons.ruby(36),
 			GameState.rubies >= limit_price, GameState.buy_fertilizer_limit)
 
 	var plot := GameState.soonest_growing_plot()
 	var rush_text := Lang.t("shop_rush") if plot >= 0 else Lang.t("shop_rush_none")
-	_add_shop_row(list, rush_text, Lang.f("buy_for", [GameState.GARDEN_RUSH_RUBIES]), UiIcons.ruby(36),
+	_add_shop_row(list, rush_text, Lang.f("buy_for_rubies", [GameState.GARDEN_RUSH_RUBIES]), UiIcons.ruby(36),
 		plot >= 0 and GameState.rubies >= GameState.GARDEN_RUSH_RUBIES,
 		func():
 			var bought := GameState.rush_plot(plot)
 			GameState.mark_ready_plots()
 			return bought)
+
+	_add_shop_row(list, Lang.f("shop_mower", [GameState.mowers]), Lang.f("buy_for_rubies", [GameState.MOWER_RUBIES]), UiIcons.ruby(36),
+		GameState.rubies >= GameState.MOWER_RUBIES, GameState.buy_mower)
 
 	_list_note(list, Lang.t("shop_upgrades_note"))
 	_list_note(list, Lang.f("shop_rent_note", [GameState.RENT_SLOT_RUBIES]))
@@ -1114,17 +1112,17 @@ func _build_coin_offers(list: VBoxContainer) -> void:
 				_add_shop_row(list, "%s: %s" % [event_name, help_text], Lang.t("bought"), UiIcons.plant_coin(36), false, func(): return false)
 			else:
 				var suffix := "" if is_current else " " + Lang.t("when_event_runs")
-				_add_shop_row(list, "%s: %s%s" % [event_name, help_text, suffix], Lang.f("buy_for", [cost]), UiIcons.plant_coin(36),
+				_add_shop_row(list, "%s: %s%s" % [event_name, help_text, suffix], Lang.f("buy_for_coins", [cost]), UiIcons.plant_coin(36),
 					is_current and GameState.plant_coins >= cost, GameState.buy_event_help)
 		if event.get("belt_preview", false):
 			var swap_cost: int = event["preview_swap_cost"]
 			var swap_text := Lang.f("shop_swap", [event_name, GameState.event_swap_credits]) if is_current else Lang.f("shop_swap_later", [event_name])
-			_add_shop_row(list, swap_text, Lang.f("buy_for", [swap_cost]), UiIcons.plant_coin(36),
+			_add_shop_row(list, swap_text, Lang.f("buy_for_coins", [swap_cost]), UiIcons.plant_coin(36),
 				is_current and GameState.plant_coins >= swap_cost, GameState.buy_swap_credit)
 		if event.get("shared_garden", false):
 			var ready: bool = is_current and GameState.is_shared_garden_on()
 			var gift_text := Lang.f("shop_gift", [GameState.shared_gift_credits]) if ready else Lang.t("shop_gift_later")
-			_add_shop_row(list, gift_text, Lang.f("buy_for", [EventData.GIFT_COST]), UiIcons.plant_coin(36),
+			_add_shop_row(list, gift_text, Lang.f("buy_for_coins", [EventData.GIFT_COST]), UiIcons.plant_coin(36),
 				ready and GameState.plant_coins >= EventData.GIFT_COST, GameState.buy_gift_credit)
 	_list_note(list, Lang.t("shop_addon_help_note"))
 

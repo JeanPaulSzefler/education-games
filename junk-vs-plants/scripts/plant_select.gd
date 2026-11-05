@@ -34,12 +34,7 @@ var rent_button: Button
 func _ready() -> void:
 	var level: Dictionary = GameState.current_level()
 
-	var bg := ColorRect.new()
-	bg.color = Color(0.15, 0.25, 0.15)
-	bg.position = Vector2(0, 0)
-	bg.size = Vector2(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(bg)
+	add_child(UiIcons.screen_background("yard"))
 
 	var title := Label.new()
 	title.text = LevelData.title(level)
@@ -165,7 +160,7 @@ func _build_rent_button() -> void:
 	rent_button.position = Vector2(400, 640)
 	rent_button.size = Vector2(480, 60)
 	rent_button.focus_mode = Control.FOCUS_NONE
-	rent_button.add_theme_font_size_override("font_size", 20)
+	rent_button.add_theme_font_size_override("font_size", 17)
 	rent_button.pressed.connect(_on_rent_pressed)
 	add_child(rent_button)
 	var key := UiIcons.rent_slot(44)

@@ -1,6 +1,6 @@
 # Zadanie 08: podgląd ekranu drugiego gracza
 
-**Status: NIEZREALIZOWANE**
+**Status: ZREALIZOWANE (2026-11-05, bez testu na dwóch telefonach)**
 
 ## Cel
 

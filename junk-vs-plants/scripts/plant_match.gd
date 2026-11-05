@@ -50,11 +50,7 @@ var message_label: Label
 var counters := {}
 
 func _ready() -> void:
-	var bg := ColorRect.new()
-	bg.color = BG_COLOR
-	bg.size = Vector2(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(bg)
+	add_child(UiIcons.screen_background("leaves"))
 
 	add_child(_label(Lang.t("plant_match"), 40, Vector2(0, 10), VIEWPORT_WIDTH))
 	message_label = _label(Lang.t("match_hint"), 17, Vector2(BOARD_POS.x, 72), cols * CELL)

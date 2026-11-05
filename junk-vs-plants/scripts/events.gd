@@ -23,11 +23,7 @@ func _ready() -> void:
 	GameState.clear_event_game()
 	GameState.refresh_event()
 
-	var bg := ColorRect.new()
-	bg.color = Color(0.15, 0.25, 0.15)
-	bg.size = Vector2(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(bg)
+	add_child(UiIcons.screen_background("menu"))
 
 	var back_btn := _button(Lang.t("back"), BACK_COLOR, Vector2(40, 620), Vector2(220, 70))
 	back_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/LevelSelect.tscn"))
@@ -172,6 +168,8 @@ func _on_stage_pressed(event: Dictionary, stage: int) -> void:
 
 	var help_text: String = Lang.t("help_use_bought") if GameState.event_help_prepaid else Lang.f("help_buy", [help["cost"]])
 	var help_btn := _button(help_text, HELP_BTN_COLOR, Vector2(370, 170), Vector2(300, 80))
+	help_btn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	help_btn.add_theme_font_size_override("font_size", 20)
 	help_btn.disabled = not GameState.event_help_prepaid and GameState.plant_coins < help["cost"]
 	help_btn.pressed.connect(func(): _start_stage(event, stage, true))
 	panel.add_child(help_btn)

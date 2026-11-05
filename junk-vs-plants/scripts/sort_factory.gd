@@ -36,11 +36,7 @@ var info_label: Label
 var feedback_label: Label
 
 func _ready() -> void:
-	var bg := ColorRect.new()
-	bg.color = Color(0.13, 0.22, 0.3)
-	bg.size = Vector2(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(bg)
+	add_child(UiIcons.screen_background("leaves"))
 	var belt := ColorRect.new()
 	belt.color = Color(0.3, 0.3, 0.33)
 	belt.position = Vector2(0, BELT_Y)

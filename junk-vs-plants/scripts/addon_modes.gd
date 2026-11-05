@@ -935,6 +935,14 @@ func _choose_giant(idx: int) -> void:
 	cost.position = Vector2(58, 14)
 	cost.add_theme_font_size_override("font_size", 20)
 	btn.add_child(cost)
+	var cost_drop := TextureRect.new()
+	cost_drop.texture = load(m.WATER_DROP_TEXTURE)
+	cost_drop.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	cost_drop.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	cost_drop.size = Vector2(22, 22)
+	cost_drop.position = Vector2(84, 17)
+	cost_drop.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	btn.add_child(cost_drop)
 	btn.pressed.connect(func():
 		if giant_used:
 			return

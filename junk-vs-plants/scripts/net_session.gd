@@ -16,7 +16,7 @@ extends Node
 const DISCOVERY_PORT := 47810
 const GAME_PORT := 47811
 # Podnosic przy kazdej zmianie protokolu - rozne wersje gry sie nie widza.
-const PROTOCOL_VERSION := 6
+const PROTOCOL_VERSION := 7
 # Po co sie laczymy: wspolpraca na jednej planszy, rywalizacja (pojedynek, kazdy
 # na swojej planszy), sadzenie razem albo wymiana naklejek (bez planszy).
 const MODE_GAME := "game"
@@ -50,6 +50,7 @@ signal garden_harvests_received(count: int)
 signal garden_gift_received
 signal duel_enemy_received(type_idx: int)
 signal duel_lost_received
+signal duel_view_received(data: Dictionary)
 signal album_received(owned: Dictionary)
 
 # Trwa gra zespolowa (obaj gracze polaczeni).
@@ -416,6 +417,16 @@ func send_duel_enemy(type_idx: int) -> void:
 func _rpc_duel_enemy(type_idx: int) -> void:
 	if multiplayer.get_remote_sender_id() == _other_peer():
 		duel_enemy_received.emit(type_idx)
+
+# Podglad planszy znajomego w pojedynku: uproszczony stan, kilka razy na sekunde.
+func send_duel_view(data: Dictionary) -> void:
+	if active:
+		_rpc_duel_view.rpc_id(_other_peer(), data)
+
+@rpc("any_peer", "call_remote", "unreliable_ordered")
+func _rpc_duel_view(data: Dictionary) -> void:
+	if multiplayer.get_remote_sender_id() == _other_peer():
+		duel_view_received.emit(data)
 
 func send_duel_lost() -> void:
 	if active:

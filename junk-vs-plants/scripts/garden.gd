@@ -21,9 +21,7 @@ const TOOL_ACTIVE_COLOR := Color(0.85, 0.7, 0.15)
 const OK_BTN_COLOR := Color(0.25, 0.6, 0.25)
 const POPUP_BG_COLOR := Color(0.95, 0.93, 0.85)
 const POPUP_TEXT_COLOR := Color(0.15, 0.12, 0.1)
-# Ten sam rysunek co Pokrzywa, ale jasnofioletowy.
-const GROWN_PLANT_IDX := 3
-const GROWN_TINT := Color(0.85, 0.7, 1.0)
+# Na jaka roslinke wyrosnie sadzonka, losuje GameState przy sadzeniu (pole "plant").
 const GROWN_SIZE := 130.0
 # Wysokosc roslinki z ziemia: od sadzonki sprzed podlania do doroslej (GROWN_SIZE).
 const SAPLING_HEIGHT := 72.0
@@ -65,11 +63,7 @@ var popup: Control
 var tick := 0.0
 
 func _ready() -> void:
-	var bg := ColorRect.new()
-	bg.color = Color(0.2, 0.36, 0.18)
-	bg.size = Vector2(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(bg)
+	add_child(UiIcons.screen_background("garden"))
 
 	add_child(_label(Lang.t("garden"), 44, Vector2(0, 24), VIEWPORT_WIDTH))
 
@@ -271,7 +265,7 @@ func _build_plots() -> void:
 				btn.add_child(timer)
 				timer_labels[i] = timer
 			GameState.PLOT_READY:
-				_build_ready_plant(btn)
+				_build_ready_plant(btn, i)
 		btn.pressed.connect(_on_plot_pressed.bind(i))
 		plots_layer.add_child(btn)
 
@@ -284,7 +278,7 @@ func _build_growth(btn: Button, i: int) -> void:
 		var path: String = UiIcons.GARDEN_STAGE_TEXTURES[k]
 		if ResourceLoader.exists(path):
 			stages.append({"node": UiIcons.texture_from(path, GROWN_SIZE), "fill": GARDEN_STAGE_FILLS[k], "gap": 0.0})
-	stages.append(_growth_layer(UiIcons.plant_icon_tinted(GROWN_PLANT_IDX, GROWN_SIZE, GROWN_TINT)))
+	stages.append(_growth_layer(UiIcons.plant_icon(GameState.garden_plots[i]["plant"], GROWN_SIZE)))
 	for stage in stages:
 		var node: Control = stage["node"]
 		# Roslinka rosnie od ziemi w gore.
@@ -326,7 +320,8 @@ func _update_growth(i: int) -> void:
 			PLOT_SIZE.y - GROWN_SIZE - 34 + stages[s]["gap"] * GROWN_SIZE * scale_factor)
 
 # Gotowa roslinka: teczowa poswiata i nagrody, ktore gracz zbiera tapnieciem.
-func _build_ready_plant(btn: Button) -> void:
+func _build_ready_plant(btn: Button, i: int) -> void:
+	var plot: Dictionary = GameState.garden_plots[i]
 	var glow := UiIcons.rainbow_glow(Vector2(GLOW_SIZE, GLOW_SIZE))
 	glow.position = Vector2((PLOT_SIZE.x - GLOW_SIZE) / 2.0, -14)
 	glow.pivot_offset = glow.size / 2.0
@@ -335,7 +330,7 @@ func _build_ready_plant(btn: Button) -> void:
 	tw.tween_property(glow, "scale", Vector2(1.08, 1.08), 0.6).set_trans(Tween.TRANS_SINE)
 	tw.tween_property(glow, "scale", Vector2.ONE, 0.6).set_trans(Tween.TRANS_SINE)
 
-	var plant := UiIcons.plant_icon_tinted(GROWN_PLANT_IDX, GROWN_SIZE, GROWN_TINT)
+	var plant := UiIcons.plant_icon(plot["plant"], GROWN_SIZE)
 	plant.position = Vector2((PLOT_SIZE.x - GROWN_SIZE) / 2.0, 0)
 	btn.add_child(plant)
 
@@ -349,7 +344,7 @@ func _build_ready_plant(btn: Button) -> void:
 	var move := UiIcons.match_move(REWARD_ICON_SIZE)
 	move.position = Vector2(110, reward_y)
 	btn.add_child(move)
-	var move_text := _label("+%d" % GameState.GARDEN_HARVEST_MOVES, 22, Vector2(110 + REWARD_ICON_SIZE, reward_y - 2), 40)
+	var move_text := _label("+%d" % plot["moves"], 22, Vector2(110 + REWARD_ICON_SIZE, reward_y - 2), 40)
 	move_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	btn.add_child(move_text)
 
@@ -495,13 +490,14 @@ func _check_ready_plots() -> void:
 	_refresh()
 
 func _collect(i: int) -> void:
+	var plot: Dictionary = GameState.garden_plots[i].duplicate()
 	if not GameState.collect_plot(i):
 		return
 	var origin := _plot_position(i)
-	message_label.text = Lang.f("garden_collected", [GameState.GARDEN_HARVEST_COINS, GameState.GARDEN_HARVEST_MOVES])
+	message_label.text = Lang.f("garden_collected", [GameState.GARDEN_HARVEST_COINS, plot["moves"]])
 
 	# Roslinka maleje i znika, a nagrody leca do licznikow u gory.
-	var plant := UiIcons.plant_icon_tinted(GROWN_PLANT_IDX, GROWN_SIZE, GROWN_TINT)
+	var plant := UiIcons.plant_icon(plot["plant"], GROWN_SIZE)
 	plant.position = origin + Vector2((PLOT_SIZE.x - GROWN_SIZE) / 2.0, 0)
 	plant.pivot_offset = Vector2(GROWN_SIZE / 2.0, GROWN_SIZE)
 	add_child(plant)

@@ -33,11 +33,7 @@ var wifi_timer := 0.0
 var searching := false
 
 func _ready() -> void:
-	var bg := ColorRect.new()
-	bg.color = Color(0.15, 0.25, 0.15)
-	bg.size = Vector2(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(bg)
+	add_child(UiIcons.screen_background("menu"))
 	var picture := UiIcons.background(Vector2(VIEWPORT_WIDTH, VIEWPORT_HEIGHT))
 	if picture != null:
 		picture.modulate = Color(0.55, 0.55, 0.55)

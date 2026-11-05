@@ -41,11 +41,7 @@ func _ready() -> void:
 	NetSession.notice = ""
 	entry = GameState.rotation_entry(kind)
 
-	var bg := ColorRect.new()
-	bg.color = Color(0.15, 0.25, 0.15) if kind == AddonData.KIND_ADDON else Color(0.13, 0.22, 0.3)
-	bg.size = Vector2(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(bg)
+	add_child(UiIcons.screen_background("menu"))
 
 	var back_btn := _button(Lang.t("back"), BACK_COLOR, Vector2(40, 620), Vector2(220, 70))
 	back_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/LevelSelect.tscn"))
@@ -175,6 +171,8 @@ func _on_stage_pressed(stage: int) -> void:
 	panel.add_child(play_btn)
 	var cost: int = entry["help"]["cost"]
 	var help_btn := _button(Lang.f("help_buy", [cost]), HELP_BTN_COLOR, Vector2(370, 170), Vector2(300, 80))
+	help_btn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	help_btn.add_theme_font_size_override("font_size", 20)
 	help_btn.disabled = GameState.plant_coins < cost
 	help_btn.pressed.connect(func(): _start_stage(stage, true))
 	panel.add_child(help_btn)
@@ -289,6 +287,8 @@ func _offer_bingo_swap(cell: int) -> void:
 	no_btn.pressed.connect(_close_popup)
 	panel.add_child(no_btn)
 	var yes_btn := _button(Lang.f("help_buy_only", [cost]), HELP_BTN_COLOR, Vector2(370, 170), Vector2(300, 80))
+	yes_btn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	yes_btn.add_theme_font_size_override("font_size", 20)
 	yes_btn.disabled = GameState.plant_coins < cost
 	yes_btn.pressed.connect(func():
 		GameState.swap_bingo_task(cell)

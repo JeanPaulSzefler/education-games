@@ -424,6 +424,66 @@ static func background(screen_size: Vector2) -> TextureRect:
 		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	return icon
 
+# Tla ekranow w czterech grupach: menu, ogrod, plansza walki ("yard") i gry
+# edukacyjne ("leaves"). Gradient jest zawsze; jesli istnieje rysunek, kladzie
+# sie na nim, a "shade" przyciemnia go pod bialymi napisami.
+const SCREEN_BACKGROUNDS := {
+	"menu": {"top": Color("1f5d3a"), "bottom": Color("0f3b2a"), "texture": BACKGROUND_TEXTURE, "shade": 0.4},
+	"garden": {"top": Color("3f7f33"), "bottom": Color("28592a"), "texture": "", "shade": 0.0},
+	"yard": {"top": Color("7a5c3a"), "bottom": Color("4f3a22"), "texture": "res://assets/sprites/ui/bg_yard.png", "shade": 0.25},
+	"leaves": {"top": Color("2f7f6f"), "bottom": Color("1d5249"), "texture": "res://assets/sprites/ui/bg_leaves.png", "shade": 0.25},
+}
+
+static func screen_background(kind: String, screen_size: Vector2 = Vector2(1280, 720)) -> Control:
+	var spec: Dictionary = SCREEN_BACKGROUNDS[kind]
+	var root := Control.new()
+	root.size = screen_size
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var gradient := Gradient.new()
+	gradient.set_color(0, spec["top"])
+	gradient.set_color(1, spec["bottom"])
+	var gradient_texture := GradientTexture2D.new()
+	gradient_texture.gradient = gradient
+	gradient_texture.fill_from = Vector2(0, 0)
+	gradient_texture.fill_to = Vector2(0, 1)
+	var fill := TextureRect.new()
+	fill.texture = gradient_texture
+	fill.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	fill.stretch_mode = TextureRect.STRETCH_SCALE
+	fill.size = screen_size
+	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(fill)
+	var path: String = spec["texture"]
+	if path != "" and ResourceLoader.exists(path):
+		var picture := TextureRect.new()
+		picture.texture = load(path)
+		picture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		picture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		picture.size = screen_size
+		picture.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		root.add_child(picture)
+		if spec["shade"] > 0.0:
+			var shade := ColorRect.new()
+			shade.color = Color(0, 0, 0, spec["shade"])
+			shade.size = screen_size
+			shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			root.add_child(shade)
+	return root
+
+# Kosiarka stojaca przed domem w jednym rzedzie (kupowana za rubiny).
+static func lawnmower(size: float) -> Control:
+	var file := file_icon("lawnmower", size)
+	if file != null:
+		return file
+	var c := _box(size)
+	_line(c, size, [Vector2(0.62, 0.5), Vector2(0.9, 0.15)], Color(0.25, 0.25, 0.28), max(3.0, size * 0.07))
+	_poly(c, size, [Vector2(0.1, 0.45), Vector2(0.7, 0.45), Vector2(0.78, 0.78), Vector2(0.1, 0.78)], Color(0.85, 0.15, 0.15))
+	_poly(c, size, [Vector2(0.1, 0.45), Vector2(0.7, 0.45), Vector2(0.7, 0.55), Vector2(0.1, 0.55)], Color(1.0, 0.45, 0.4))
+	_circle(c, size, Vector2(0.28, 0.82), 0.12, Color(0.15, 0.15, 0.17))
+	_circle(c, size, Vector2(0.66, 0.82), 0.12, Color(0.15, 0.15, 0.17))
+	_poly(c, size, [Vector2(0.02, 0.7), Vector2(0.12, 0.62), Vector2(0.12, 0.78), Vector2(0.02, 0.78)], Color(0.7, 0.7, 0.75))
+	return c
+
 # Drzewko Zycia (dodatek Ochrona drzewka).
 static func tree(size: float) -> Control:
 	var file := file_icon("tree_of_life", size)

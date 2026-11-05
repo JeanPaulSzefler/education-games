@@ -24,11 +24,7 @@ var progress_label: Label
 var bin_buttons: Array = []
 
 func _ready() -> void:
-	var bg := ColorRect.new()
-	bg.color = Color(0.13, 0.22, 0.3)
-	bg.size = Vector2(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(bg)
+	add_child(UiIcons.screen_background("leaves"))
 	add_child(_label(Lang.t("addon_quiz"), 38, Vector2(0, 14)))
 	progress_label = _label("", 22, Vector2(0, 70))
 	add_child(progress_label)

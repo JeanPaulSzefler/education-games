@@ -30,11 +30,7 @@ var moves_label: Label
 var message_label: Label
 
 func _ready() -> void:
-	var bg := ColorRect.new()
-	bg.color = Color(0.15, 0.25, 0.15)
-	bg.size = Vector2(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(bg)
+	add_child(UiIcons.screen_background("leaves"))
 	add_child(_label(Lang.t("addon_memory"), 40, Vector2(0, 14), VIEWPORT_WIDTH))
 	message_label = _label(Lang.t("memory_hint"), 20, Vector2(0, 76), VIEWPORT_WIDTH)
 	add_child(message_label)
@@ -52,6 +48,7 @@ func _ready() -> void:
 
 	var preview_btn := _button(Lang.f("memory_preview", [GameState.rotation_entry(kind)["help"]["cost"]]), HELP_BTN_COLOR, Vector2(1010, 620), Vector2(240, 70))
 	preview_btn.add_theme_font_size_override("font_size", 20)
+	preview_btn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	preview_btn.pressed.connect(_on_preview_pressed)
 	add_child(preview_btn)
 

@@ -176,6 +176,10 @@ const BELT_PREVIEW_TILE := 72.0
 const TEAM_EXTRA_ENEMIES := 0.5
 const TEAM_START_WATER := 150
 const TEAM_SNAPSHOT_INTERVAL := 1.0 / 15.0
+# Podglad planszy znajomego w pojedynku (okolo 1/4 rozmiaru planszy).
+const DUEL_VIEW_INTERVAL := 0.22
+const DUEL_VIEW_SCALE := 0.26
+const DUEL_VIEW_HEADER := 22.0
 const TEAM_VIEW_SMOOTHING := 20.0
 
 # --- Tryb nieskonczony: trudnosc rosnie z czasem przetrwanym przez gracza
@@ -240,6 +244,14 @@ var water_drops := []
 var fertilizer_drops := []
 var selected_plant_type := -1
 var game_over := false
+
+# Kosiarki (kupowane za rubiny): rzad -> {"node", "running"}. Komplet zuzywa sie
+# przy pierwszej, ktora ruszy.
+const MOWER_SPEED := 520.0
+const MOWER_DAMAGE := 1000
+const MOWER_SIZE := 70.0
+var mowers := {}
+var mower_set_used := false
 var water_count_label: Label
 var wave_label: Label
 var message_label: Label
@@ -302,6 +314,10 @@ var guest_cooldowns := {}
 # Pojedynek ze znajomym (rywalizacja) i liczba pokonanych od ostatniego duzego wroga.
 var duel := false
 var duel_big_counter := 0
+var duel_view: Control
+var duel_view_units: Control
+var duel_view_water: Label
+var duel_view_timer := 0.0
 # Zasady trybow z rotacji dodatkow (AddonModes) - null poza nimi.
 var modes: AddonModes = null
 # Czy gracz stracil w tej grze jakas rosline (zadanie bingo).
@@ -340,6 +356,7 @@ func _ready() -> void:
 	_setup_blocked_cells()
 	_build_background()
 	_build_grid_visual()
+	_build_mowers()
 	_build_hud()
 	_build_top_buttons()
 	_build_water_counter()
@@ -411,11 +428,7 @@ func _setup_blocked_cells() -> void:
 		blocked_cells[_cell_key(pos[0], pos[1])] = true
 
 func _build_background() -> void:
-	var bg := ColorRect.new()
-	bg.color = Color(0.55, 0.45, 0.3)
-	bg.position = Vector2(0, 0)
-	bg.size = Vector2(VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
-	add_child(bg)
+	add_child(UiIcons.screen_background("yard"))
 
 func _build_grid_visual() -> void:
 	var grass_texture := load("res://assets/sprites/ui/grass_tile.png")
@@ -1026,6 +1039,7 @@ func _process(delta: float) -> void:
 	_update_boss_specials(delta)
 	_update_boss_bar()
 	_update_water_theft(delta)
+	_update_mowers(delta)
 	_update_water_drops(delta)
 	_update_fertilizer_drops(delta)
 	_update_health_bars(delta)
@@ -1037,6 +1051,8 @@ func _process(delta: float) -> void:
 		_update_tutorial()
 	if game_over:
 		return
+	if duel:
+		_update_duel_view(delta)
 	_check_win_condition()
 	if team and not game_over:
 		_update_snapshot(delta)
@@ -1651,7 +1667,7 @@ func _update_enemies(delta: float) -> void:
 				slow_mult2 *= modes.enemy_speed(e)
 			e["x"] -= e["speed"] * slow_mult2 * delta
 			e["node"].position.x = e["x"]
-			if e["x"] <= GRID_LEFT:
+			if e["x"] <= GRID_LEFT and not _mower_saves_row(e["row"]):
 				reached_house = true
 				last_enemy_texture = BOSS_TYPES[e["boss_type_idx"]]["texture"] if e["is_boss"] else ENEMY_TYPES[e["type_idx"]]["texture"]
 			# Chodzenie: podskakiwanie/kolysanie tylko gdy wrog faktycznie sie
@@ -1681,6 +1697,45 @@ func _update_enemies(delta: float) -> void:
 
 	if reached_house:
 		_lose_game()
+
+# --- Kosiarki: gdy smiec dojdzie do domu, kosiarka z tego rzedu rusza,
+# niszczy wszystko po drodze i znika (raz na poziom, jak w PvZ). ---
+func _build_mowers() -> void:
+	if GameState.mowers <= 0 or team or duel:
+		return
+	for row in range(ROWS):
+		var node := UiIcons.lawnmower(MOWER_SIZE)
+		node.position = Vector2(GRID_LEFT - MOWER_SIZE - 6.0, GRID_TOP + row * CELL + (CELL - MOWER_SIZE) / 2.0)
+		add_child(node)
+		mowers[row] = {"node": node, "running": false}
+
+# Prawda, gdy kosiarka z tego rzedu stoi albo wlasnie jedzie: dom jest bezpieczny.
+func _mower_saves_row(row: int) -> bool:
+	if not mowers.has(row):
+		return false
+	if not mowers[row]["running"]:
+		mowers[row]["running"] = true
+		if not mower_set_used:
+			mower_set_used = true
+			GameState.use_mower_set()
+	return true
+
+func _update_mowers(delta: float) -> void:
+	for row in mowers.keys():
+		var mower: Dictionary = mowers[row]
+		if not mower["running"]:
+			continue
+		var node: Control = mower["node"]
+		node.position.x += MOWER_SPEED * delta
+		for e in enemies:
+			if e["row"] == row and e["x"] <= node.position.x + MOWER_SIZE and e["hp"] > 0:
+				e["hp"] = e["hp"] - MOWER_DAMAGE if e["is_boss"] else 0
+		for pile in junk_piles.values():
+			if pile["row"] == row and _pile_x(pile) <= node.position.x + MOWER_SIZE and pile["hp"] > 0:
+				_damage_pile(pile, MOWER_DAMAGE)
+		if node.position.x > GRID_LEFT + COLS * CELL:
+			node.queue_free()
+			mowers.erase(row)
 
 # Kolor wroga poza efektami chwilowymi: zamrozony > plonacy > normalny.
 func _enemy_base_modulate(e: Dictionary) -> Color:
@@ -2397,6 +2452,15 @@ func _next_belt_plant() -> int:
 func _rebuild_belt_preview() -> void:
 	for child in belt_preview_layer.get_children():
 		child.queue_free()
+	var swap_note := Label.new()
+	swap_note.text = Lang.f("swap_for_coins", [event_rules["preview_swap_cost"]])
+	swap_note.position = Vector2(GRID_LEFT - 30, BELT_PREVIEW_Y)
+	swap_note.size = Vector2(135, BELT_PREVIEW_TILE)
+	swap_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	swap_note.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	swap_note.add_theme_font_size_override("font_size", 15)
+	swap_note.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	belt_preview_layer.add_child(swap_note)
 	for i in range(belt_queue.size()):
 		var entry: Dictionary = belt_queue[i]
 		var btn := Button.new()
@@ -3094,7 +3158,95 @@ func _setup_duel() -> void:
 		if not game_over:
 			message_label.text = Lang.t("duel_friend_lost")
 			_win_game())
+	NetSession.duel_view_received.connect(_on_duel_view)
+	NetSession.session_lost.connect(func(): duel_view.visible = false)
+	_build_duel_view()
 	kills_label.visible = true
+
+# --- Pojedynek: podglad planszy znajomego na dole ekranu (tylko do ogladania) ---
+func _build_duel_view() -> void:
+	var board_size := Vector2(COLS * CELL, ROWS * CELL) * DUEL_VIEW_SCALE
+	duel_view = Control.new()
+	duel_view.size = board_size + Vector2(0, DUEL_VIEW_HEADER)
+	duel_view.position = Vector2(VIEWPORT_WIDTH - board_size.x - 10.0, VIEWPORT_HEIGHT - duel_view.size.y - 4.0)
+	duel_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(duel_view)
+	var frame := ColorRect.new()
+	frame.color = Color(0, 0, 0, 0.6)
+	frame.position = Vector2(-4, -3)
+	frame.size = duel_view.size + Vector2(8, 7)
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	duel_view.add_child(frame)
+	var title := Label.new()
+	title.text = Lang.t("duel_friend_view")
+	title.add_theme_font_size_override("font_size", 13)
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	duel_view.add_child(title)
+	duel_view_water = Label.new()
+	duel_view_water.position = Vector2(board_size.x - 62, 0)
+	duel_view_water.size = Vector2(44, DUEL_VIEW_HEADER)
+	duel_view_water.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	duel_view_water.add_theme_font_size_override("font_size", 13)
+	duel_view_water.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	duel_view.add_child(duel_view_water)
+	var drop := _make_sprite(WATER_DROP_TEXTURE, 16)
+	drop.position = Vector2(board_size.x - 18, 3)
+	duel_view.add_child(drop)
+	var board := ColorRect.new()
+	board.color = Color(0.22, 0.4, 0.2)
+	board.position = Vector2(0, DUEL_VIEW_HEADER)
+	board.size = board_size
+	board.clip_contents = true
+	board.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	duel_view.add_child(board)
+	duel_view_units = board
+	duel_view.visible = false
+
+# Wysyla uproszczony stan swojej planszy: rodzaj i pole roslin oraz rodzaj,
+# polozenie i rzad wrogow (bez pasokow zycia i animacji).
+func _update_duel_view(delta: float) -> void:
+	duel_view_timer -= delta
+	if duel_view_timer > 0.0:
+		return
+	duel_view_timer = DUEL_VIEW_INTERVAL
+	var plant_rows := []
+	for p in plants:
+		plant_rows.append([p["type_idx"], p["col"], p["row"]])
+	var enemy_rows := []
+	for e in enemies:
+		enemy_rows.append([-1 - e["boss_type_idx"] if e["is_boss"] else e["type_idx"], int(e["x"] - GRID_LEFT), e["row"]])
+	NetSession.send_duel_view({"w": water, "p": plant_rows, "e": enemy_rows})
+
+func _on_duel_view(data: Dictionary) -> void:
+	if game_over or duel_view == null:
+		return
+	duel_view.visible = true
+	duel_view_water.text = str(int(data.get("w", 0)))
+	for child in duel_view_units.get_children():
+		child.queue_free()
+	var cell := CELL * DUEL_VIEW_SCALE
+	var sprite_size := int(cell) - 2
+	var plant_rows = data.get("p", [])
+	var enemy_rows = data.get("e", [])
+	if not (plant_rows is Array and enemy_rows is Array):
+		return
+	for row in plant_rows:
+		if row is Array and row.size() >= 3 and int(row[0]) >= 0 and int(row[0]) < PLANT_TYPES.size():
+			var node := _make_sprite(PLANT_TYPES[int(row[0])]["texture"], sprite_size)
+			node.position = Vector2(int(row[1]), int(row[2])) * cell
+			duel_view_units.add_child(node)
+	for row in enemy_rows:
+		if row is Array and row.size() >= 3:
+			var kind := int(row[0])
+			var texture := ""
+			if kind < 0 and -1 - kind < BOSS_TYPES.size():
+				texture = BOSS_TYPES[-1 - kind]["texture"]
+			elif kind >= 0 and kind < ENEMY_TYPES.size():
+				texture = ENEMY_TYPES[kind]["texture"]
+			if texture != "":
+				var node := _make_sprite(texture, sprite_size)
+				node.position = Vector2(float(row[1]) * DUEL_VIEW_SCALE, int(row[2]) * cell)
+				duel_view_units.add_child(node)
 
 func _duel_send_enemy() -> void:
 	if game_over:
