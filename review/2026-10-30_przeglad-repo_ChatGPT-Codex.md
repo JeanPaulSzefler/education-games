@@ -10,6 +10,8 @@
 
 **Charakter przeglądu:** analiza kodu, diagnostyczne uruchomienia Godota i kontrola plików graficznych. To przegląd techniczny, nie ocena balansu gry.
 
+> **Aktualizacja 2026-11-07 (Claude):** błędy R1–R4 są naprawione w `0dbdd8a`. Przegląd ma też nowy kontekst: decyzja Ownera o grze przez internet z kontami i zakupami. Stan zaleceń i ich wpływ opisuje [§7](#7-aktualizacja-2026-11-07--stan-zaleceń-i-gra-przez-internet). Sekcje 1–6 pozostają bez zmian, jako zapis przeglądu z 30 października.
+
 ## 1. Gałęzie i stan źródeł
 
 Gałęzie odczytano przez `git ls-remote --heads origin` i pobrano przez `git fetch`. Uwzględniono merge wykonany przez autora w trakcie tej sesji.
@@ -180,3 +182,72 @@ Oddzielenie `PlantData`, `LevelData`, `EventData` oraz `UiIcons` ułatwia kontro
 5. Przenieść wybrane scenariusze diagnostyczne do utrzymywanego zestawu testów/CI.
 
 W ramach tej sesji wykonano zadanie graficzne i zapisano przegląd; opisane poprawki kodu pozostają osobnym zadaniem. `master` nie został zmieniony przez tę sesję; grafiki i raport trafiają na `jvp-notatki-2026-10-30`.
+
+## 7. Aktualizacja 2026-11-07 — stan zaleceń i gra przez internet
+
+**Autor aktualizacji:** Claude (Anthropic), sesja Claude Code.
+
+**Zakres:**
+
+- stan R1–R4 i zaleceń z §5 na `master` (`612e937`) i na `jvp-notatki-2026-10-30` (`87655b7`, wersja 1.2.0, jeszcze niescalona z `master`);
+- wpływ decyzji Ownera z 7 listopada 2026: **gra przez internet, konta graczy na serwerze, zakupy po zalogowaniu kontem Google**.
+
+**Metoda:** wyłącznie lektura kodu i historii gita. W tej sesji **nie uruchamiano Godota** i nie powtarzano odtworzeń z §3.
+
+### 7.1. Stan błędów R1–R4
+
+Wszystkie cztery poprawiono w commicie `0dbdd8a` („fix the issues from the ChatGPT review”, 30 października 2026). Poprawki są na `master` i na `jvp-notatki-2026-10-30`.
+
+| Błąd | Stan | Co zmieniono |
+|---|---|---|
+| R1 — dodatkowi wrogowie poza rzędami „Wąskiego gardła” | Naprawiony | `main.gd`: `_random_enemy_row()` losuje tylko z `narrow_rows`; kupki śmieci też tylko w dozwolonych rzędach |
+| R2 — kupiona czwarta roślina zostaje na kolejne próby | Naprawiony | `main.gd`: powtórka bez ponownego zakupu przywraca narzuconą talię (`event_forced_plants`) |
+| R3 — wygasłe wydarzenie daje się wystartować | Naprawiony | `game_state.gd`: `start_event_game()` odświeża wydarzenie i odrzuca start, gdy zmienił się jego identyfikator. Przycisk powtórki wraca do ekranu wydarzeń po upływie czasu |
+| R4 — host nie egzekwuje odnowienia roślin gościa | Naprawiony | `main.gd`: host trzyma `guest_cooldowns` i odrzuca sadzenie przed końcem odnowienia, z komunikatem dla gościa |
+
+**Uwaga:** poprawek nie potwierdzono testem regresji. W repozytorium nadal nie ma testów (zob. 7.2), więc każdy z tych błędów może wrócić niezauważony.
+
+### 7.2. Stan pozostałych zaleceń z §5 i §6
+
+| Zalecenie | Stan na 2026-11-07 |
+|---|---|
+| Jedna wspierana wersja Godota, sprawdzony eksport APK | **Częściowo.** Projekt deklaruje `4.7`; APK 1.1.0 i 1.2.0 zbudowano, więc eksport działa u Ownera. Preset nadal nie ma klucza `runnable` w `[preset.0]`, a README mówi „4.4/4.7”. Wersję warto zapisać jednoznacznie |
+| Zaproszenia na dwóch fizycznych urządzeniach | Nie ma zapisu o teście w repozytorium |
+| Utrzymywany zestaw testów i CI | **Otwarte.** Brak testów i konfiguracji CI |
+| Atomowy zapis postępu | **Otwarte.** `save_progress()` nadal pisze bezpośrednio do pliku docelowego |
+| `icon.svg` w opisie struktury | **Otwarte.** README nadal wymienia `icon.svg` |
+
+### 7.3. Wpływ decyzji o grze przez internet
+
+Przegląd z 30 października zakładał grę bez serwera. Po decyzji Ownera niektóre ustalenia ważą więcej:
+
+1. **Klasa błędów R3 (czas z urządzenia).** Wydarzenia, ogród (15 godzin wzrostu) i dzienna oferta rubinów liczą czas zegarem telefonu. Offline to drobna luka. Przy kontach na serwerze i zakupach zmiana zegara daje darmowe nagrody. Czas wydarzeń i limity dzienne powinien wyznaczać serwer, a każde wydarzenie powinno mieć identyfikator edycji (jak w zaleceniu R3).
+2. **Klasa błędów R4 (zaufanie do klienta).** Host między dwoma telefonami wystarcza do wspólnej gry ze znajomym. **Nie wystarcza do ekonomii:** zmodyfikowany klient może przyznać sobie rubiny i roślimonety. Rubiny, roślimonety, nagrody i zakupy powinny żyć w **portfelu na serwerze**, a zakupy z Google Play powinny być weryfikowane na serwerze. Rozgrywka może dalej zależeć od hosta.
+3. **Zapis.** Serwer staje się źródłem prawdy dla danych konta; zapis lokalny zostaje do gry offline. Potrzebne są reguły:
+   - jednorazowe przeniesienie istniejących lokalnych kont (do 6 na telefon) na konto online;
+   - rozstrzyganie konfliktów;
+   - atomowy zapis lokalny (zalecenie z §5) przed pierwszą synchronizacją.
+4. **Sieć.** Dziś: wykrywanie przez broadcast UDP (port 47810) i bezpośrednie połączenie ENet (port 47811). Działa tylko w jednej sieci Wi-Fi lub na hotspocie. Przez internet potrzebny jest pośrednik (relay) albo serwer gry. Lokalny tryb Wi-Fi warto zostawić jako zapasowy.
+5. **Gra dla dzieci.** Konta i gra online wymagają:
+   - zgody rodzica (RODO art. 8; granica wieku w Polsce do potwierdzenia);
+   - usuwania konta w aplikacji i przez stronę WWW (Google Play);
+   - braku otwartego czatu z nieznajomymi (Google Play Families): tylko znajomi przez kod, gotowe emotki;
+   - na iOS: „Sign in with Apple” obok logowania Google.
+6. **Oferty „za reklamę”.** Dziś gra pokazuje zamiast reklamy własny napis z odliczaniem (`level_select.gd`), więc nie ma zewnętrznego SDK reklam. Jeśli pojawią się prawdziwe reklamy, w aplikacji z programu Families wolno używać tylko certyfikowanych sieci reklamowych.
+
+Analiza backendu z rekomendacją Nakamy jest w repozytorium `JeanPaulSzefler/AI-crew`, w pliku `outputs/2026-11-07-orkiestracja-agentow-i-hosting-v2.md`, sekcja 3.1. Nakama to otwartoźródłowy serwer gier z SDK dla Godota: konta Google i Apple, portfel, weryfikacja zakupów, mecze przez pośrednika.
+
+### 7.4. Proponowana kolejność dalszych prac (zastępuje §6)
+
+1. Scalić `jvp-notatki-2026-10-30` (wersja 1.2.0) z `master`.
+2. Dodać utrzymywane testy regresji dla R1–R4 i migracji zapisów, uruchamiane w trybie headless, oraz prosty CI.
+3. Wprowadzić atomowy zapis lokalny (plik tymczasowy i podmiana) i zapisać wspieraną wersję Godota.
+4. Napisać specyfikację „JvP online”:
+   - zakres: znajomi przez kod, bez czatu;
+   - bramka rodzica;
+   - minimum danych;
+   - usuwanie konta;
+   - które dane przechodzą na serwer.
+5. Przenieść ekonomię (rubiny, roślimonety, nagrody) do modelu z portfelem na serwerze i czasem serwera; rozgrywka z hostem bez zmian.
+6. Zbudować backend lokalnie (Docker), potem zintegrować logowanie, zakupy testowe Google Play Billing i grę przez pośrednika.
+7. Przed testem zamkniętym w Google Play uruchomić serwer produkcyjny w UE, z kopiami zapasowymi poza dostawcą.
