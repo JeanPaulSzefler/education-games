@@ -235,7 +235,7 @@ Przegląd z 30 października zakładał grę bez serwera. Po decyzji Ownera niek
    - na iOS: „Sign in with Apple” obok logowania Google.
 6. **Oferty „za reklamę”.** Dziś gra pokazuje zamiast reklamy własny napis z odliczaniem (`level_select.gd`), więc nie ma zewnętrznego SDK reklam. Jeśli pojawią się prawdziwe reklamy, w aplikacji z programu Families wolno używać tylko certyfikowanych sieci reklamowych.
 
-Analiza backendu z rekomendacją Nakamy jest w repozytorium `JeanPaulSzefler/AI-crew`, w pliku `outputs/2026-11-07-orkiestracja-agentow-i-hosting-v2.md`, sekcja 3.1. Nakama to otwartoźródłowy serwer gier z SDK dla Godota: konta Google i Apple, portfel, weryfikacja zakupów, mecze przez pośrednika.
+Analiza backendu z rekomendacją Nakamy jest w repozytorium `JeanPaulSzefler/AI-crew`, w pliku `outputs/2026-11-07-orkiestracja-agentow-i-hosting-v3.md`, sekcja 3.1 (wersja 2 tego raportu zastąpiona wersją 3). Nakama to otwartoźródłowy serwer gier z SDK dla Godota: konta Google i Apple, portfel, weryfikacja zakupów, mecze przez pośrednika.
 
 ### 7.4. Proponowana kolejność dalszych prac (zastępuje §6)
 
